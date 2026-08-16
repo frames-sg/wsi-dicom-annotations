@@ -1,0 +1,8 @@
+[advisories]
+# `lru 0.16.4` is transitive through zarrs 0.23.14. RUSTSEC-2026-0253
+# requires a key with a panicking Drop implementation plus unwind recovery.
+# The only key types used by this dependency path are zarrs' StoreKey(String)
+# and ChunkIndices(Vec<u64>), whose drops cannot panic. The dicom-viewer root
+# additionally applies the upstream source-level backport. Remove this exception
+# when zarrs permits lru >= 0.18.2.
+ignore = ["RUSTSEC-2026-0253"]
