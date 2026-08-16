@@ -1,0 +1,33 @@
+[package]
+name = "wsi-dicom-annotations"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.96"
+license = "MIT OR Apache-2.0"
+description = "DICOM WSI ANN, SEG, SR, and Parametric Map interoperability"
+repository = "https://github.com/frames-sg/wsi-dicom-annotations"
+readme = "README.md"
+keywords = ["dicom", "whole-slide", "pathology", "annotations"]
+categories = ["science"]
+
+[features]
+default = ["parametric-map"]
+parametric-map = ["dep:npyz", "dep:tiff", "dep:zarrs"]
+
+[dependencies]
+chrono = "0.4"
+dicom-core = "0.9"
+dicom-dictionary-std = "0.9"
+dicom-encoding = "0.9"
+dicom-object = "0.9"
+dicom-parser = "0.9"
+dicom-transfer-syntax-registry = { version = "0.9", default-features = false }
+npyz = { version = "=0.9.1", optional = true }
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+thiserror = "2"
+tiff = { version = "=0.11.3", optional = true, default-features = false, features = ["deflate", "lzw", "zstd"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+zarrs = { version = "=0.23.14", optional = true, default-features = false, features = ["blosc", "crc32c", "filesystem", "gzip", "sharding", "zstd"] }
