@@ -2,13 +2,17 @@ mod geometry_codec;
 mod read;
 mod write;
 
+#[cfg(test)]
+#[path = "ann_validation_tests.rs"]
+mod validation_tests;
+
 use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::{Error, Result};
 
 use super::context::DicomAnnotationContext;
-use super::derived_object::SeriesEquipmentMetadata;
+use super::derived_object::DerivedObjectProducer;
 use super::dicom_dataset::new_dicom_uid;
 use super::model::{AnnotationGeometry, AnnotationGroup, InteroperabilityDiagnostic, Point2};
 
@@ -29,7 +33,7 @@ pub struct AnnotationDocument {
     content_label: String,
     content_description: String,
     content_creator_name: Option<String>,
-    series_equipment: SeriesEquipmentMetadata,
+    producer: DerivedObjectProducer,
     groups: Vec<AnnotationGroup>,
     diagnostics: Vec<InteroperabilityDiagnostic>,
 }
@@ -48,7 +52,7 @@ impl AnnotationDocument {
             content_label: "WSI_ANNOTATION".into(),
             content_description: "WSI vector annotations".into(),
             content_creator_name: None,
-            series_equipment: SeriesEquipmentMetadata::viewer("9101"),
+            producer: DerivedObjectProducer::library_default(9101, "WSI annotations"),
             groups,
             diagnostics: Vec::new(),
         };
@@ -85,6 +89,41 @@ impl AnnotationDocument {
         document.groups = groups;
         document.validate()?;
         Ok(document)
+    }
+
+    /// Replaces the neutral library identity with caller-owned producer metadata.
+    #[must_use]
+    pub fn with_producer(mut self, producer: DerivedObjectProducer) -> Self {
+        self.producer = producer;
+        self
+    }
+
+    #[must_use]
+    pub fn producer(&self) -> &DerivedObjectProducer {
+        &self.producer
+    }
+
+    /// Atomically replaces all groups after validating group and document invariants.
+    pub fn replace_groups(&mut self, groups: Vec<AnnotationGroup>) -> Result<()> {
+        let mut candidate = self.clone();
+        candidate.groups = groups;
+        candidate.validate()?;
+        self.groups = candidate.groups;
+        Ok(())
+    }
+
+    /// Atomically replaces one group after validating group and document invariants.
+    pub fn replace_group(&mut self, index: usize, group: AnnotationGroup) -> Result<()> {
+        let mut groups = self.groups.clone();
+        let group_count = groups.len();
+        let destination = groups.get_mut(index).ok_or_else(|| {
+            Error::InvalidInput(format!(
+                "annotation group index {index} is outside the {}-group document",
+                group_count
+            ))
+        })?;
+        *destination = group;
+        self.replace_groups(groups)
     }
 
     #[must_use]
@@ -197,11 +236,6 @@ impl AnnotationDocument {
     }
 
     #[must_use]
-    pub fn groups_mut(&mut self) -> &mut Vec<AnnotationGroup> {
-        &mut self.groups
-    }
-
-    #[must_use]
     pub fn diagnostics(&self) -> &[InteroperabilityDiagnostic] {
         &self.diagnostics
     }
@@ -235,16 +269,11 @@ impl AnnotationDocument {
         let mut coordinate_values = 0_usize;
         let mut group_uids = BTreeSet::new();
         for group in &self.groups {
+            group.validate()?;
             if !group_uids.insert(group.uid()) {
                 return Err(Error::InvalidInput(format!(
                     "duplicate Annotation Group UID {}",
                     group.uid()
-                )));
-            }
-            if group.annotation_count() == 0 {
-                return Err(Error::InvalidInput(format!(
-                    "annotation group {:?} has no annotations",
-                    group.label()
                 )));
             }
             match group.geometry() {

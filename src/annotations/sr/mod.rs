@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::{Error, Result};
 
 use super::context::DicomAnnotationContext;
+use super::derived_object::DerivedObjectProducer;
 use super::dicom_dataset::new_dicom_uid;
 use super::model::{AlgorithmIdentification, DicomCode, Point2, Point3, TrackingIdentity};
 use super::seg::SegmentationDocument;
@@ -359,6 +360,7 @@ pub struct StructuredReportDocument {
     pub(crate) sop_instance_uid: String,
     pub(crate) series_instance_uid: String,
     pub(crate) device_observer_uid: String,
+    pub(crate) producer: DerivedObjectProducer,
     pub(crate) report_title: DicomCode,
     pub(crate) procedures_reported: Vec<DicomCode>,
     pub(crate) groups: Vec<StructuredReportMeasurementGroup>,
@@ -389,6 +391,7 @@ impl StructuredReportDocument {
             sop_instance_uid: new_dicom_uid(),
             series_instance_uid: new_dicom_uid(),
             device_observer_uid: new_dicom_uid(),
+            producer: DerivedObjectProducer::library_default(9301, "WSI measurement reports"),
             report_title,
             procedures_reported,
             groups,
@@ -466,6 +469,18 @@ impl StructuredReportDocument {
             semantics.procedures_reported.clone(),
             groups,
         )
+    }
+
+    /// Replaces the neutral library identity with caller-owned producer metadata.
+    #[must_use]
+    pub fn with_producer(mut self, producer: DerivedObjectProducer) -> Self {
+        self.producer = producer;
+        self
+    }
+
+    #[must_use]
+    pub fn producer(&self) -> &DerivedObjectProducer {
+        &self.producer
     }
 
     #[must_use]

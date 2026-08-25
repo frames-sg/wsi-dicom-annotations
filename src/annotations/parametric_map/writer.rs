@@ -6,9 +6,7 @@ use dicom_core::VR;
 use dicom_dictionary_std::{tags, uids};
 use dicom_object::InMemDicomObject;
 
-use crate::annotations::derived_object::{
-    add_common_instance_reference, build_common_object, SeriesEquipmentMetadata,
-};
+use crate::annotations::derived_object::{add_common_instance_reference, build_common_object};
 use crate::annotations::dicom_dataset::{put_text, sequence};
 use crate::Result;
 
@@ -43,14 +41,13 @@ pub(super) fn build_object(
     document: &ParametricMapDocument,
     spec: &InstanceSpec<'_>,
 ) -> Result<InMemDicomObject> {
-    let equipment = SeriesEquipmentMetadata::parametric_map(&document.profile.algorithm);
     let mut object = build_common_object(
         &document.source,
         uids::PARAMETRIC_MAP_STORAGE,
         spec.sop_instance_uid,
         spec.series_instance_uid,
         "SM",
-        &equipment,
+        &document.producer,
     )?;
     put_text(
         &mut object,

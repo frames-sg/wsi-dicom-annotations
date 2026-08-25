@@ -337,7 +337,9 @@ impl DicomAnnotationContext {
     }
 
     pub(crate) fn validate_point(&self, x: f64, y: f64) -> Result<()> {
-        if x < 0.0
+        if !x.is_finite()
+            || !y.is_finite()
+            || x < 0.0
             || y < 0.0
             || x > f64::from(self.total_pixel_matrix_columns)
             || y > f64::from(self.total_pixel_matrix_rows)

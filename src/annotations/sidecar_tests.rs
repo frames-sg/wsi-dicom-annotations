@@ -162,7 +162,7 @@ fn source_reference_paths_cover_direct_series_and_shared_derivation_forms() {
 fn discovery_returns_only_referencing_sidecars_with_stable_metadata() {
     let directory = tempfile::tempdir().unwrap();
     let source_path = directory.path().join("source.dcm");
-    crate::annotation_tests::write_source_wsi(&source_path, 16, 12, 4, 4);
+    crate::test_support::write_source_wsi(&source_path, 16, 12, 4, 4);
     let context = DicomAnnotationContext::from_source(&source_path).unwrap();
 
     let mut reference = InMemDicomObject::new_empty();

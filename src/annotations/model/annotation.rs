@@ -1,8 +1,9 @@
 use crate::{Error, Result};
 
 use super::super::dicom_dataset::new_dicom_uid;
-use super::algorithm::{validate_generation, AlgorithmIdentification, GenerationType};
-use super::code::{validate_text, DicomCode, MAX_LONG_TEXT_BYTES};
+use super::algorithm::{AlgorithmIdentification, GenerationType};
+use super::code::{is_valid_dicom_uid, validate_text, DicomCode, MAX_LONG_TEXT_BYTES};
+use super::finding::FindingSemantics;
 use super::geometry::{validate_points, validate_polygon, AnnotationGeometry, Point2};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,18 +79,11 @@ pub struct AnnotationGroup {
     uid: String,
     label: String,
     description: String,
-    generation_type: GenerationType,
-    algorithms: Vec<AlgorithmIdentification>,
-    category: DicomCode,
-    property_type: DicomCode,
-    property_type_modifiers: Vec<DicomCode>,
-    anatomic_regions: Vec<DicomCode>,
-    primary_anatomic_structures: Vec<DicomCode>,
+    finding: FindingSemantics,
     applies_to_all_optical_paths: bool,
     referenced_optical_paths: Vec<String>,
     applies_to_all_z_planes: bool,
     common_z_coordinates: Vec<f64>,
-    recommended_display_cielab: [u16; 3],
     geometry: AnnotationGeometry,
     measurements: Vec<AnnotationMeasurement>,
 }
@@ -107,18 +101,11 @@ impl AnnotationGroup {
             new_dicom_uid(),
             label.into(),
             String::new(),
-            GenerationType::Manual,
-            Vec::new(),
-            category,
-            property_type,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            FindingSemantics::manual(category, property_type, recommended_display_cielab),
             true,
             Vec::new(),
             true,
             Vec::new(),
-            recommended_display_cielab,
             AnnotationGeometry::Points(points),
             Vec::new(),
         )
@@ -138,18 +125,11 @@ impl AnnotationGroup {
             new_dicom_uid(),
             label.into(),
             String::new(),
-            GenerationType::Manual,
-            Vec::new(),
-            category,
-            property_type,
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
+            FindingSemantics::manual(category, property_type, recommended_display_cielab),
             true,
             Vec::new(),
             true,
             Vec::new(),
-            recommended_display_cielab,
             AnnotationGeometry::Polygons(polygons),
             Vec::new(),
         )
@@ -160,64 +140,27 @@ impl AnnotationGroup {
         uid: String,
         label: String,
         description: String,
-        generation_type: GenerationType,
-        algorithms: Vec<AlgorithmIdentification>,
-        category: DicomCode,
-        property_type: DicomCode,
-        property_type_modifiers: Vec<DicomCode>,
-        anatomic_regions: Vec<DicomCode>,
-        primary_anatomic_structures: Vec<DicomCode>,
+        finding: FindingSemantics,
         applies_to_all_optical_paths: bool,
         referenced_optical_paths: Vec<String>,
         applies_to_all_z_planes: bool,
         common_z_coordinates: Vec<f64>,
-        recommended_display_cielab: [u16; 3],
         geometry: AnnotationGeometry,
         measurements: Vec<AnnotationMeasurement>,
     ) -> Result<Self> {
-        validate_text("annotation group UID", &uid, 64)?;
-        validate_text("annotation group label", &label, 64)?;
-        if description.len() > 10_240 {
-            return Err(Error::InvalidInput(
-                "annotation group description exceeds 10240 bytes".into(),
-            ));
-        }
-        validate_generation(generation_type, &algorithms)?;
-        validate_optical_path_applicability(
-            applies_to_all_optical_paths,
-            &referenced_optical_paths,
-        )?;
-        if common_z_coordinates.iter().any(|value| !value.is_finite()) {
-            return Err(Error::InvalidInput(
-                "common Z coordinates must be finite".into(),
-            ));
-        }
-        if applies_to_all_z_planes && !common_z_coordinates.is_empty() {
-            return Err(Error::InvalidInput(
-                "common Z coordinates cannot be present when annotations apply to all Z planes"
-                    .into(),
-            ));
-        }
         let group = Self {
             uid,
             label,
             description,
-            generation_type,
-            algorithms,
-            category,
-            property_type,
-            property_type_modifiers,
-            anatomic_regions,
-            primary_anatomic_structures,
+            finding,
             applies_to_all_optical_paths,
             referenced_optical_paths,
             applies_to_all_z_planes,
             common_z_coordinates,
-            recommended_display_cielab,
             geometry,
             measurements,
         };
-        group.validate_measurements()?;
+        group.validate()?;
         Ok(group)
     }
 
@@ -258,28 +201,32 @@ impl AnnotationGroup {
         generation_type: GenerationType,
         algorithms: Vec<AlgorithmIdentification>,
     ) -> Result<Self> {
-        validate_generation(generation_type, &algorithms)?;
-        self.generation_type = generation_type;
-        self.algorithms = algorithms;
+        self.finding = self.finding.with_generation(generation_type, algorithms)?;
         Ok(self)
     }
 
     #[must_use]
     pub fn with_property_type_modifiers(mut self, modifiers: Vec<DicomCode>) -> Self {
-        self.property_type_modifiers = modifiers;
+        self.finding = self.finding.with_property_type_modifiers(modifiers);
         self
     }
 
     #[must_use]
     pub fn with_anatomic_regions(mut self, regions: Vec<DicomCode>) -> Self {
-        self.anatomic_regions = regions;
+        self.finding = self.finding.with_anatomic_regions(regions);
         self
     }
 
     #[must_use]
     pub fn with_primary_anatomic_structures(mut self, structures: Vec<DicomCode>) -> Self {
-        self.primary_anatomic_structures = structures;
+        self.finding = self.finding.with_primary_anatomic_structures(structures);
         self
+    }
+
+    pub(crate) fn with_finding_semantics(mut self, finding: FindingSemantics) -> Result<Self> {
+        self.finding = finding;
+        self.validate()?;
+        Ok(self)
     }
 
     pub fn with_referenced_optical_paths(mut self, paths: Vec<String>) -> Result<Self> {
@@ -334,6 +281,62 @@ impl AnnotationGroup {
         }
     }
 
+    pub(crate) fn validate(&self) -> Result<()> {
+        validate_text("annotation group UID", &self.uid, 64)?;
+        if !is_valid_dicom_uid(&self.uid) {
+            return Err(Error::InvalidInput(
+                "annotation group UID is not a valid DICOM UID".into(),
+            ));
+        }
+        validate_text("annotation group label", &self.label, 64)?;
+        if self.description.len() > MAX_LONG_TEXT_BYTES || self.description.contains('\0') {
+            return Err(Error::InvalidInput(format!(
+                "annotation group description exceeds {MAX_LONG_TEXT_BYTES} bytes or contains NUL"
+            )));
+        }
+        self.finding.validate()?;
+        validate_optical_path_applicability(
+            self.applies_to_all_optical_paths,
+            &self.referenced_optical_paths,
+        )?;
+        for path in &self.referenced_optical_paths {
+            validate_text("referenced optical path identifier", path, 16)?;
+        }
+        if self
+            .referenced_optical_paths
+            .iter()
+            .enumerate()
+            .any(|(index, path)| self.referenced_optical_paths[index + 1..].contains(path))
+        {
+            return Err(Error::InvalidInput(
+                "referenced optical path identifiers must be unique".into(),
+            ));
+        }
+        if self
+            .common_z_coordinates
+            .iter()
+            .any(|value| !value.is_finite())
+        {
+            return Err(Error::InvalidInput(
+                "common Z coordinates must be finite".into(),
+            ));
+        }
+        if self.applies_to_all_z_planes && !self.common_z_coordinates.is_empty() {
+            return Err(Error::InvalidInput(
+                "common Z coordinates cannot be present when annotations apply to all Z planes"
+                    .into(),
+            ));
+        }
+        if self.annotation_count() == 0 {
+            return Err(Error::InvalidInput(format!(
+                "annotation group {:?} has no annotations",
+                self.label
+            )));
+        }
+        self.validate_geometry()?;
+        self.validate_measurements()
+    }
+
     #[must_use]
     pub fn annotation_count(&self) -> usize {
         self.geometry.annotation_count()
@@ -384,37 +387,37 @@ impl AnnotationGroup {
 
     #[must_use]
     pub const fn generation_type(&self) -> GenerationType {
-        self.generation_type
+        self.finding.generation_type()
     }
 
     #[must_use]
     pub fn algorithms(&self) -> &[AlgorithmIdentification] {
-        &self.algorithms
+        self.finding.algorithms()
     }
 
     #[must_use]
     pub fn category(&self) -> &DicomCode {
-        &self.category
+        self.finding.category()
     }
 
     #[must_use]
     pub fn property_type(&self) -> &DicomCode {
-        &self.property_type
+        self.finding.property_type()
     }
 
     #[must_use]
     pub fn property_type_modifiers(&self) -> &[DicomCode] {
-        &self.property_type_modifiers
+        self.finding.property_type_modifiers()
     }
 
     #[must_use]
     pub fn anatomic_regions(&self) -> &[DicomCode] {
-        &self.anatomic_regions
+        self.finding.anatomic_regions()
     }
 
     #[must_use]
     pub fn primary_anatomic_structures(&self) -> &[DicomCode] {
-        &self.primary_anatomic_structures
+        self.finding.primary_anatomic_structures()
     }
 
     #[must_use]
@@ -439,7 +442,7 @@ impl AnnotationGroup {
 
     #[must_use]
     pub const fn recommended_display_cielab(&self) -> [u16; 3] {
-        self.recommended_display_cielab
+        self.finding.recommended_display_cielab()
     }
 
     #[must_use]
@@ -455,12 +458,18 @@ impl AnnotationGroup {
         }
     }
 
-    #[must_use]
-    pub fn point_annotations_mut(&mut self) -> Option<&mut Vec<Point2>> {
-        match &mut self.geometry {
-            AnnotationGeometry::Points(points) => Some(points),
-            _ => None,
+    /// Atomically replaces point geometry after revalidating all group invariants.
+    pub fn replace_points(&mut self, points: Vec<Point2>) -> Result<()> {
+        if !matches!(self.geometry, AnnotationGeometry::Points(_)) {
+            return Err(Error::InvalidInput(
+                "point replacement requires a point annotation group".into(),
+            ));
         }
+        let mut candidate = self.clone();
+        candidate.geometry = AnnotationGeometry::Points(points);
+        candidate.validate()?;
+        *self = candidate;
+        Ok(())
     }
 
     #[must_use]
@@ -471,12 +480,18 @@ impl AnnotationGroup {
         }
     }
 
-    #[must_use]
-    pub fn polygon_annotations_mut(&mut self) -> Option<&mut Vec<Vec<Point2>>> {
-        match &mut self.geometry {
-            AnnotationGeometry::Polygons(polygons) => Some(polygons),
-            _ => None,
+    /// Atomically replaces polygon geometry after revalidating all group invariants.
+    pub fn replace_polygons(&mut self, polygons: Vec<Vec<Point2>>) -> Result<()> {
+        if !matches!(self.geometry, AnnotationGeometry::Polygons(_)) {
+            return Err(Error::InvalidInput(
+                "polygon replacement requires a polygon annotation group".into(),
+            ));
         }
+        let mut candidate = self.clone();
+        candidate.geometry = AnnotationGeometry::Polygons(polygons);
+        candidate.validate()?;
+        *self = candidate;
+        Ok(())
     }
 
     #[must_use]

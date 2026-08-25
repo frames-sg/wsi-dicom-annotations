@@ -94,9 +94,10 @@ fn group_builders_preserve_declared_semantics_and_edit_only_matching_geometry() 
     assert!(!points.applies_to_all_z_planes());
     assert_eq!(points.common_z_coordinates(), &[0.0, 0.5]);
     assert!(points.editable());
-    assert!(points.polygon_annotations_mut().is_none());
-    points.point_annotations_mut().unwrap()[0] = Point2::new(2.0, 2.0);
-    points.validate_geometry().unwrap();
+    assert!(points.polygon_annotations().is_none());
+    points
+        .replace_points(vec![Point2::new(2.0, 2.0), Point2::new(3.0, 4.0)])
+        .unwrap();
 
     let mut polygons = AnnotationGroup::polygons(
         "Region",
@@ -111,9 +112,118 @@ fn group_builders_preserve_declared_semantics_and_edit_only_matching_geometry() 
         ]],
     )
     .unwrap();
-    assert!(polygons.point_annotations_mut().is_none());
-    polygons.polygon_annotations_mut().unwrap()[0][0] = Point2::new(0.5, 0.5);
-    polygons.validate_geometry().unwrap();
+    assert!(polygons.point_annotations().is_none());
+    polygons
+        .replace_polygons(vec![vec![
+            Point2::new(0.5, 0.5),
+            Point2::new(4.0, 0.0),
+            Point2::new(4.0, 4.0),
+            Point2::new(0.0, 4.0),
+        ]])
+        .unwrap();
+}
+
+#[test]
+fn checked_geometry_replacement_is_atomic_and_revalidates_topology_and_coordinates() {
+    let category = DicomCode::new("MORPH", "99FRAMES", "Morphology").unwrap();
+    let property = DicomCode::new("TUMOR", "99FRAMES", "Tumor").unwrap();
+    let square = vec![
+        Point2::new(0.0, 0.0),
+        Point2::new(4.0, 0.0),
+        Point2::new(4.0, 4.0),
+        Point2::new(0.0, 4.0),
+    ];
+    let mut polygons = AnnotationGroup::polygons(
+        "Region",
+        category.clone(),
+        property.clone(),
+        [1, 2, 3],
+        vec![square.clone()],
+    )
+    .unwrap();
+
+    for invalid in [
+        vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(4.0, 4.0),
+            Point2::new(0.0, 4.0),
+            Point2::new(4.0, 0.0),
+        ],
+        vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(2.0, 0.0),
+        ],
+        vec![
+            Point2::new(f64::NAN, 0.0),
+            Point2::new(4.0, 0.0),
+            Point2::new(0.0, 4.0),
+        ],
+        vec![
+            Point2::new(f64::INFINITY, 0.0),
+            Point2::new(4.0, 0.0),
+            Point2::new(0.0, 4.0),
+        ],
+    ] {
+        assert!(polygons.replace_polygons(vec![invalid]).is_err());
+        assert_eq!(
+            polygons.polygon_annotations(),
+            Some([square.clone()].as_slice())
+        );
+    }
+
+    let mut points = AnnotationGroup::points(
+        "Cells",
+        category,
+        property,
+        [1, 2, 3],
+        vec![Point2::new(1.0, 1.0), Point2::new(2.0, 2.0)],
+    )
+    .unwrap();
+    points
+        .add_measurement(AnnotationMeasurement::new(
+            DicomCode::new("AREA", "99FRAMES", "Area").unwrap(),
+            DicomCode::new("mm2", "UCUM", "square millimeter").unwrap(),
+            vec![1.0, 2.0],
+        ))
+        .unwrap();
+    let original = points.clone();
+    assert!(points.replace_points(vec![Point2::new(1.0, 1.0)]).is_err());
+    assert!(points
+        .replace_points(vec![
+            Point2::new(1.0, 1.0),
+            Point2::new(2.0, 2.0),
+            Point2::new(3.0, 3.0),
+        ])
+        .is_err());
+    assert_eq!(points, original);
+}
+
+#[test]
+fn checked_geometry_replacement_rejects_removed_indexed_measurement_target() {
+    let mut points = AnnotationGroup::points(
+        "Cells",
+        DicomCode::new("MORPH", "99FRAMES", "Morphology").unwrap(),
+        DicomCode::new("TUMOR", "99FRAMES", "Tumor").unwrap(),
+        [1, 2, 3],
+        vec![Point2::new(1.0, 1.0), Point2::new(2.0, 2.0)],
+    )
+    .unwrap();
+    points
+        .add_measurement(
+            AnnotationMeasurement::for_annotations(
+                DicomCode::new("AREA", "99FRAMES", "Area").unwrap(),
+                DicomCode::new("mm2", "UCUM", "square millimeter").unwrap(),
+                vec![2.0],
+                vec![2],
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let original = points.clone();
+
+    assert!(points.replace_points(vec![Point2::new(1.0, 1.0)]).is_err());
+    assert_eq!(points, original);
 }
 
 #[test]

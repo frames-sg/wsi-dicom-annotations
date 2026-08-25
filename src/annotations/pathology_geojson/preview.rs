@@ -85,7 +85,7 @@ impl From<ProfiledFeature> for PathologyPreviewFeature {
             tracking_id: feature.tracking_id,
             label: feature.name,
             classification: feature.classification,
-            recommended_display_cielab: feature.semantics.color,
+            recommended_display_cielab: feature.semantics.finding.recommended_display_cielab(),
             bounds,
             geometry,
         }

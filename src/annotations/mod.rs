@@ -18,8 +18,12 @@ mod semantic_digest;
 mod sidecar;
 mod sr;
 
+#[cfg(test)]
+mod provenance_tests;
+
 pub use ann::AnnotationDocument;
 pub use context::DicomAnnotationContext;
+pub use derived_object::DerivedObjectProducer;
 pub use json::validate_unique_object_keys;
 pub use model::{
     polygon_boundaries_intersect, polygon_contains_point, polygon_self_intersects,
@@ -45,7 +49,8 @@ pub use scheme::{
 };
 pub use seg::{
     BinaryMaskRun, BinarySegmentationFrame, FractionalMaskRun, FractionalSegmentationFrame,
-    SegmentationDocument, SegmentationKind, SegmentationSegment,
+    SegToAnnConversionPolicy, SegmentationDocument, SegmentationKind, SegmentationSegment,
+    VectorizedAnnotations,
 };
 pub use sidecar::{
     annotation_object_kind, discover_sidecars, AnnotationObjectKind, SidecarKind, SidecarMetadata,

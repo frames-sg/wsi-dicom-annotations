@@ -2,7 +2,9 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
-use crate::{DicomAnnotationContext, Error, InteroperabilityDiagnostic, Result};
+use crate::{
+    DerivedObjectProducer, DicomAnnotationContext, Error, InteroperabilityDiagnostic, Result,
+};
 
 use super::super::semantic_digest::{finish, update_algorithm, update_code, update_text};
 use super::frame::{encode_frame, FrameKey, PixelPrecision};
@@ -13,6 +15,7 @@ use super::{NormalizedRaster, RasterChannelSelection, RasterDescriptor, RasterPr
 pub struct ParametricMapDocument {
     pub(super) source: DicomAnnotationContext,
     pub(super) profile: RasterProfile,
+    pub(super) producer: DerivedObjectProducer,
     pub(super) raster: NormalizedRaster,
     pub(super) selected_channels: Vec<usize>,
     pub(super) descriptor: RasterDescriptor,
@@ -50,6 +53,7 @@ impl ParametricMapDocument {
         let mut document = Self {
             source,
             profile,
+            producer: DerivedObjectProducer::library_default(9401, "WSI parametric maps"),
             raster,
             selected_channels,
             descriptor,
@@ -64,6 +68,18 @@ impl ParametricMapDocument {
         };
         document.scan()?;
         Ok(document)
+    }
+
+    /// Replaces the neutral library identity with caller-owned producer metadata.
+    #[must_use]
+    pub fn with_producer(mut self, producer: DerivedObjectProducer) -> Self {
+        self.producer = producer;
+        self
+    }
+
+    #[must_use]
+    pub fn producer(&self) -> &DerivedObjectProducer {
+        &self.producer
     }
 
     #[must_use]

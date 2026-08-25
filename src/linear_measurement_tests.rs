@@ -1,4 +1,4 @@
-use crate::annotation_tests::write_source_wsi_with_spacing;
+use crate::test_support::write_source_wsi_with_spacing;
 use crate::{
     AnnotationScheme, DicomAnnotationContext, LinearMeasurementSpec, MeasurementReportSemantics,
     Point2, StructuredReportDocument, StructuredReportReferenceKind, TrackingIdentity,

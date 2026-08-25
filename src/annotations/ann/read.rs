@@ -7,14 +7,15 @@ use crate::{Error, Result};
 
 use super::super::coded_content::{read_algorithms, read_code_at, read_codes_at};
 use super::super::context::DicomAnnotationContext;
-use super::super::derived_object::SeriesEquipmentMetadata;
+use super::super::derived_object::DerivedObjectProducer;
 use super::super::dicom_dataset::{
     optional_string, optional_strings, read_yes_no, required_string, sequence_items,
 };
 use super::super::dicom_file::enforce_file_limit;
 use super::super::model::{
     AnnotationGeometry, AnnotationGraphicType, AnnotationGroup, AnnotationMeasurement,
-    DiagnosticDisposition, DiagnosticSeverity, GenerationType, InteroperabilityDiagnostic, Point2,
+    DiagnosticDisposition, DiagnosticSeverity, FindingSemantics, GenerationType,
+    InteroperabilityDiagnostic, Point2,
 };
 use super::geometry_codec::{decode_polygons, primitive_point_offset, validate_encoded_geometry};
 use super::{AnnotationDocument, MAX_ANNOTATION_GROUPS, MAX_ANN_FILE_BYTES, MAX_COORDINATE_VALUES};
@@ -160,7 +161,7 @@ pub(super) fn read_ann(path: &Path, source: &DicomAnnotationContext) -> Result<A
         content_description: optional_string(&object, tags::CONTENT_DESCRIPTION)
             .unwrap_or_default(),
         content_creator_name: optional_string(&object, tags::CONTENT_CREATOR_NAME),
-        series_equipment: SeriesEquipmentMetadata::read(&object),
+        producer: DerivedObjectProducer::read(&object),
         groups,
         diagnostics,
     };
@@ -313,43 +314,45 @@ fn read_group(
         required_string(item, tags::ANNOTATION_GROUP_UID)?,
         required_string(item, tags::ANNOTATION_GROUP_LABEL)?,
         optional_string(item, tags::ANNOTATION_GROUP_DESCRIPTION).unwrap_or_default(),
-        generation_type,
-        algorithms,
-        read_code_at(
-            item,
-            tags::ANNOTATION_PROPERTY_CATEGORY_CODE_SEQUENCE,
-            &format!("{path}.AnnotationPropertyCategoryCodeSequence"),
-            diagnostics,
-        )?,
-        read_code_at(
-            item,
-            tags::ANNOTATION_PROPERTY_TYPE_CODE_SEQUENCE,
-            &format!("{path}.AnnotationPropertyTypeCodeSequence"),
-            diagnostics,
-        )?,
-        read_codes_at(
-            item,
-            tags::ANNOTATION_PROPERTY_TYPE_MODIFIER_CODE_SEQUENCE,
-            &format!("{path}.AnnotationPropertyTypeModifierCodeSequence"),
-            diagnostics,
-        )?,
-        read_codes_at(
-            item,
-            tags::ANATOMIC_REGION_SEQUENCE,
-            &format!("{path}.AnatomicRegionSequence"),
-            diagnostics,
-        )?,
-        read_codes_at(
-            item,
-            tags::PRIMARY_ANATOMIC_STRUCTURE_SEQUENCE,
-            &format!("{path}.PrimaryAnatomicStructureSequence"),
-            diagnostics,
+        FindingSemantics::new(
+            generation_type,
+            algorithms,
+            read_code_at(
+                item,
+                tags::ANNOTATION_PROPERTY_CATEGORY_CODE_SEQUENCE,
+                &format!("{path}.AnnotationPropertyCategoryCodeSequence"),
+                diagnostics,
+            )?,
+            read_code_at(
+                item,
+                tags::ANNOTATION_PROPERTY_TYPE_CODE_SEQUENCE,
+                &format!("{path}.AnnotationPropertyTypeCodeSequence"),
+                diagnostics,
+            )?,
+            read_codes_at(
+                item,
+                tags::ANNOTATION_PROPERTY_TYPE_MODIFIER_CODE_SEQUENCE,
+                &format!("{path}.AnnotationPropertyTypeModifierCodeSequence"),
+                diagnostics,
+            )?,
+            read_codes_at(
+                item,
+                tags::ANATOMIC_REGION_SEQUENCE,
+                &format!("{path}.AnatomicRegionSequence"),
+                diagnostics,
+            )?,
+            read_codes_at(
+                item,
+                tags::PRIMARY_ANATOMIC_STRUCTURE_SEQUENCE,
+                &format!("{path}.PrimaryAnatomicStructureSequence"),
+                diagnostics,
+            )?,
+            color,
         )?,
         applies_to_all_optical_paths,
         referenced_optical_paths,
         applies_to_all_z_planes,
         common_z_coordinates,
-        color,
         geometry,
         measurements,
     )

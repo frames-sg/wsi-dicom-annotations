@@ -14,7 +14,7 @@ use super::{
 use crate::annotations::coded_content::code_item;
 use crate::annotations::context::DicomAnnotationContext;
 use crate::annotations::derived_object::{
-    build_common_object, sop_reference_item, SeriesEquipmentMetadata,
+    build_common_object, sop_reference_item, DerivedObjectProducer,
 };
 use crate::annotations::dicom_dataset::{dicom_now, put_text, sequence};
 use crate::annotations::dicom_file::{atomic_write_dicom, ensure_sidecar_destination};
@@ -29,7 +29,7 @@ pub(super) fn write_sr(document: &StructuredReportDocument, path: &Path) -> Resu
         &document.sop_instance_uid,
         &document.series_instance_uid,
         "SR",
-        &SeriesEquipmentMetadata::viewer("9301"),
+        &document.producer,
     )?;
     for tag in [
         tags::CONTAINER_IDENTIFIER,
@@ -95,7 +95,10 @@ fn write_root_content(
         vec![template_item("1500")],
     ));
     let mut content = language_items()?;
-    content.extend(device_observer_items(&document.device_observer_uid)?);
+    content.extend(device_observer_items(
+        &document.device_observer_uid,
+        &document.producer,
+    )?);
     for procedure in &document.procedures_reported {
         content.push(code_content_item(
             "HAS CONCEPT MOD",
@@ -355,7 +358,10 @@ fn language_items() -> Result<Vec<InMemDicomObject>> {
     )])
 }
 
-fn device_observer_items(device_uid: &str) -> Result<Vec<InMemDicomObject>> {
+fn device_observer_items(
+    device_uid: &str,
+    producer: &DerivedObjectProducer,
+) -> Result<Vec<InMemDicomObject>> {
     Ok(vec![
         code_content_item(
             "HAS OBS CONTEXT",
@@ -370,22 +376,22 @@ fn device_observer_items(device_uid: &str) -> Result<Vec<InMemDicomObject>> {
         text_content_item(
             "HAS OBS CONTEXT",
             &concept("121013", "DCM", "Device Observer Name")?,
-            "annotation_probe",
+            producer.manufacturer_model_name(),
         ),
         text_content_item(
             "HAS OBS CONTEXT",
             &concept("121014", "DCM", "Device Observer Manufacturer")?,
-            "Frames",
+            producer.manufacturer(),
         ),
         text_content_item(
             "HAS OBS CONTEXT",
             &concept("121015", "DCM", "Device Observer Model Name")?,
-            "dicom-viewer-rust",
+            producer.manufacturer_model_name(),
         ),
         text_content_item(
             "HAS OBS CONTEXT",
             &concept("121016", "DCM", "Device Observer Serial Number")?,
-            env!("CARGO_PKG_VERSION"),
+            producer.device_serial_number(),
         ),
     ])
 }

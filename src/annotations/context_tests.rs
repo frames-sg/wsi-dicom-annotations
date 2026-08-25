@@ -19,7 +19,7 @@ fn empty_file_object() -> DefaultDicomObject {
 fn context_projects_level_zero_slide_and_tiled_full_frame_coordinates() {
     let directory = tempfile::tempdir().expect("temporary directory should be created");
     let source = directory.path().join("source.dcm");
-    crate::annotation_tests::write_source_wsi(&source, 16, 12, 4, 4);
+    crate::test_support::write_source_wsi(&source, 16, 12, 4, 4);
     let context = DicomAnnotationContext::from_source(&source)
         .expect("synthetic VL WSI context should parse");
 
@@ -102,7 +102,7 @@ fn context_projects_level_zero_slide_and_tiled_full_frame_coordinates() {
 fn coordinate_projection_reports_each_missing_source_geometry_attribute() {
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("source.dcm");
-    crate::annotation_tests::write_source_wsi(&source, 16, 12, 4, 4);
+    crate::test_support::write_source_wsi(&source, 16, 12, 4, 4);
     let context = DicomAnnotationContext::from_source(&source).unwrap();
 
     let mut missing_origin = context.clone();
@@ -147,7 +147,7 @@ fn coordinate_projection_reports_each_missing_source_geometry_attribute() {
 fn context_uses_shared_pixel_measures_when_top_level_values_are_absent() {
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("source.dcm");
-    crate::annotation_tests::write_source_wsi(&source, 16, 12, 4, 4);
+    crate::test_support::write_source_wsi(&source, 16, 12, 4, 4);
     let mut object = dicom_object::open_file(&source).unwrap();
     object.take(tags::PIXEL_SPACING).unwrap();
     object.take(tags::SLICE_THICKNESS).unwrap();

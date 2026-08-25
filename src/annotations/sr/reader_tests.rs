@@ -29,7 +29,7 @@ fn content_item(concept: &str, value_type: &str) -> InMemDicomObject {
 fn source_context() -> (tempfile::TempDir, DicomAnnotationContext) {
     let directory = tempfile::tempdir().expect("temporary directory should be created");
     let source = directory.path().join("source.dcm");
-    crate::annotation_tests::write_source_wsi(&source, 16, 12, 4, 4);
+    crate::test_support::write_source_wsi(&source, 16, 12, 4, 4);
     let context = DicomAnnotationContext::from_source(&source)
         .expect("synthetic VL WSI context should parse");
     (directory, context)

@@ -2,8 +2,8 @@ use std::path::Path;
 
 use super::PathologyAnnotationSet;
 use crate::{
-    AnnotationDocument, DicomAnnotationContext, Error, Result, SegmentationDocument,
-    StructuredReportDocument,
+    AnnotationDocument, DerivedObjectProducer, DicomAnnotationContext, Error, Result,
+    SegmentationDocument, StructuredReportDocument,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -89,6 +89,20 @@ impl PathologyDicomDocuments {
             .then(|| annotations.to_sr(seg.as_ref()))
             .transpose()?;
         Ok(Self { ann, seg, sr })
+    }
+
+    /// Applies caller-owned producer metadata to every document present in the set.
+    #[must_use]
+    pub fn with_producers(
+        mut self,
+        ann: DerivedObjectProducer,
+        seg: DerivedObjectProducer,
+        sr: DerivedObjectProducer,
+    ) -> Self {
+        self.ann = self.ann.take().map(|document| document.with_producer(ann));
+        self.seg = self.seg.take().map(|document| document.with_producer(seg));
+        self.sr = self.sr.take().map(|document| document.with_producer(sr));
+        self
     }
 
     #[must_use]

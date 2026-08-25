@@ -2,15 +2,14 @@ use dicom_core::{Tag, VR};
 use dicom_dictionary_std::tags;
 use dicom_object::InMemDicomObject;
 
-use crate::Result;
+use crate::{Error, Result};
 
 use super::context::DicomAnnotationContext;
 use super::dicom_dataset::{dicom_now, optional_string, put_optional_text, put_text, sequence};
-#[cfg(feature = "parametric-map")]
-use super::model::AlgorithmIdentification;
 
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SeriesEquipmentMetadata {
+/// Caller-owned identity and series metadata for a newly derived DICOM object.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DerivedObjectProducer {
     series_number: String,
     series_description: Option<String>,
     manufacturer: String,
@@ -19,28 +18,62 @@ pub(crate) struct SeriesEquipmentMetadata {
     software_versions: String,
 }
 
-impl SeriesEquipmentMetadata {
-    pub(crate) fn viewer(series_number: &str) -> Self {
+impl DerivedObjectProducer {
+    /// Creates validated producer metadata with an explicit DICOM Series Number.
+    pub fn new(
+        series_number: i32,
+        manufacturer: impl Into<String>,
+        manufacturer_model_name: impl Into<String>,
+        device_serial_number: impl Into<String>,
+        software_versions: impl Into<String>,
+    ) -> Result<Self> {
+        let producer = Self {
+            series_number: series_number.to_string(),
+            series_description: None,
+            manufacturer: manufacturer.into(),
+            manufacturer_model_name: manufacturer_model_name.into(),
+            device_serial_number: device_serial_number.into(),
+            software_versions: software_versions.into(),
+        };
+        producer.validate()?;
+        Ok(producer)
+    }
+
+    /// Adds an explicit DICOM Series Description.
+    pub fn with_series_description(mut self, description: impl Into<String>) -> Result<Self> {
+        self.series_description = Some(description.into());
+        self.validate()?;
+        Ok(self)
+    }
+
+    pub(crate) fn library_default(series_number: i32, series_description: &str) -> Self {
         Self {
-            series_number: series_number.into(),
-            series_description: Some("WSI annotations".into()),
-            manufacturer: "Frames".into(),
-            manufacturer_model_name: "DICOM Viewer".into(),
-            device_serial_number: "LOCAL".into(),
+            series_number: series_number.to_string(),
+            series_description: Some(series_description.into()),
+            manufacturer: "wsi-dicom-annotations project".into(),
+            manufacturer_model_name: env!("CARGO_PKG_NAME").into(),
+            device_serial_number: "not-applicable".into(),
             software_versions: env!("CARGO_PKG_VERSION").into(),
         }
     }
 
-    #[cfg(feature = "parametric-map")]
-    pub(crate) fn parametric_map(algorithm: &AlgorithmIdentification) -> Self {
-        Self {
-            series_number: "9401".into(),
-            series_description: Some("WSI parametric maps".into()),
-            manufacturer: algorithm.source().unwrap_or("Frames").into(),
-            manufacturer_model_name: algorithm.name().into(),
-            device_serial_number: "LOCAL".into(),
-            software_versions: algorithm.version().into(),
+    fn validate(&self) -> Result<()> {
+        if self.series_number.len() > 12 || self.series_number.parse::<i32>().is_err() {
+            return Err(Error::InvalidInput(
+                "producer series number is not a valid DICOM IS integer".into(),
+            ));
         }
+        if let Some(description) = &self.series_description {
+            validate_equipment_text("series description", description, false)?;
+        }
+        validate_equipment_text("manufacturer", &self.manufacturer, true)?;
+        validate_equipment_text(
+            "manufacturer model name",
+            &self.manufacturer_model_name,
+            true,
+        )?;
+        validate_equipment_text("device serial number", &self.device_serial_number, true)?;
+        validate_equipment_text("software versions", &self.software_versions, true)
     }
 
     pub(crate) fn read(object: &InMemDicomObject) -> Self {
@@ -56,7 +89,7 @@ impl SeriesEquipmentMetadata {
         }
     }
 
-    fn write(&self, object: &mut InMemDicomObject) {
+    pub(crate) fn write(&self, object: &mut InMemDicomObject) {
         put_text(object, tags::SERIES_NUMBER, VR::IS, &self.series_number);
         put_optional_text(
             object,
@@ -79,6 +112,47 @@ impl SeriesEquipmentMetadata {
             put_text(object, tag, VR::LO, value);
         }
     }
+
+    #[must_use]
+    pub fn series_number(&self) -> &str {
+        &self.series_number
+    }
+
+    #[must_use]
+    pub fn series_description(&self) -> Option<&str> {
+        self.series_description.as_deref()
+    }
+
+    #[must_use]
+    pub fn manufacturer(&self) -> &str {
+        &self.manufacturer
+    }
+
+    #[must_use]
+    pub fn manufacturer_model_name(&self) -> &str {
+        &self.manufacturer_model_name
+    }
+
+    #[must_use]
+    pub fn device_serial_number(&self) -> &str {
+        &self.device_serial_number
+    }
+
+    #[must_use]
+    pub fn software_versions(&self) -> &str {
+        &self.software_versions
+    }
+}
+
+fn validate_equipment_text(name: &str, value: &str, allow_empty: bool) -> Result<()> {
+    if (!allow_empty && value.trim().is_empty()) || value.len() > 64 || value.contains(['\\', '\0'])
+    {
+        return Err(Error::InvalidInput(format!(
+            "producer {name} must {}fit in 64 bytes and contain no DICOM separator or NUL",
+            if allow_empty { "" } else { "be nonempty and " }
+        )));
+    }
+    Ok(())
 }
 
 pub(crate) fn build_common_object(
@@ -87,7 +161,7 @@ pub(crate) fn build_common_object(
     sop_instance_uid: &str,
     series_instance_uid: &str,
     modality: &str,
-    series_equipment: &SeriesEquipmentMetadata,
+    producer: &DerivedObjectProducer,
 ) -> Result<InMemDicomObject> {
     let source = context.source_metadata()?;
     let mut object = InMemDicomObject::new_empty();
@@ -132,7 +206,7 @@ pub(crate) fn build_common_object(
         VR::UI,
         series_instance_uid,
     );
-    series_equipment.write(&mut object);
+    producer.write(&mut object);
     let (date, time) = dicom_now();
     put_text(&mut object, tags::INSTANCE_CREATION_DATE, VR::DA, &date);
     put_text(&mut object, tags::INSTANCE_CREATION_TIME, VR::TM, &time);

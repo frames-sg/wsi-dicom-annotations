@@ -1,11 +1,12 @@
 use dicom_core::{DataElement, VR};
 use dicom_dictionary_std::tags;
 
-use crate::annotation_tests::{write_source_wsi, write_source_wsi_with_spacing};
+use crate::test_support::{write_source_wsi, write_source_wsi_with_spacing};
 use crate::{
-    AnnotationGraphicType, CoordinateGraphic, DicomAnnotationContext, PathologyAnnotationSet,
-    PathologyCoordinateSpace, PathologyDicomDocuments, PathologyDicomTarget, PathologyGeometryKind,
-    PathologyPreviewGeometry, StructuredReportDocument, StructuredReportReferenceKind,
+    AnnotationGraphicType, CoordinateGraphic, DerivedObjectProducer, DicomAnnotationContext,
+    PathologyAnnotationSet, PathologyCoordinateSpace, PathologyDicomDocuments,
+    PathologyDicomTarget, PathologyGeometryKind, PathologyPreviewGeometry,
+    StructuredReportDocument, StructuredReportReferenceKind,
 };
 
 const MAPPING: &str = r#"
@@ -900,15 +901,37 @@ fn shared_pathology_documents_build_and_verify_a_seg_referenced_sr_bundle() {
     )
     .unwrap();
 
+    let producer = |series_number, description| {
+        DerivedObjectProducer::new(
+            series_number,
+            "Frames",
+            "DICOM Viewer",
+            "not-applicable",
+            "0.1.0",
+        )
+        .unwrap()
+        .with_series_description(description)
+        .unwrap()
+    };
     let documents = PathologyDicomDocuments::build(
         &annotations,
         &[PathologyDicomTarget::Seg, PathologyDicomTarget::Sr],
     )
-    .unwrap();
+    .unwrap()
+    .with_producers(
+        producer(9101, "WSI annotations"),
+        producer(9201, "WSI segmentations"),
+        producer(9301, "WSI measurement reports"),
+    );
 
     assert!(documents.ann().is_none());
     assert!(documents.seg().is_some());
     assert!(documents.sr().is_some());
+    assert_eq!(documents.seg().unwrap().producer().manufacturer(), "Frames");
+    assert_eq!(
+        documents.sr().unwrap().producer().manufacturer_model_name(),
+        "DICOM Viewer"
+    );
     let missing_ann_path = directory.path().join("missing-ann.dcm");
     assert!(matches!(
         documents

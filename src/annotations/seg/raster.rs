@@ -1,4 +1,59 @@
-use super::*;
+use std::collections::BTreeSet;
+
+use super::{
+    BinaryMaskRun, BinarySegmentationFrame, FractionalMaskRun, SegmentationSegment,
+    MAX_SEGMENTATION_FRAMES, MAX_SEGMENTATION_PIXELS,
+};
+use crate::annotations::context::DicomAnnotationContext;
+use crate::annotations::model::{polygon_contains_point, Point2};
+use crate::{Error, Result};
+
+pub(super) struct RunBudget {
+    count: usize,
+    limit: usize,
+}
+
+impl RunBudget {
+    pub(super) const fn new(limit: usize) -> Self {
+        Self { count: 0, limit }
+    }
+
+    fn record(&mut self) -> Result<()> {
+        self.count = self
+            .count
+            .checked_add(1)
+            .ok_or_else(|| Error::InvalidInput("SEG run count overflows".into()))?;
+        if self.count > self.limit {
+            return Err(Error::InvalidInput(format!(
+                "SEG normalization exceeds the {}-run resource limit",
+                self.limit
+            )));
+        }
+        Ok(())
+    }
+}
+
+pub(super) fn scan_nonzero_ranges<T>(
+    values: &[T],
+    mut is_nonzero: impl FnMut(&T) -> bool,
+    budget: &mut RunBudget,
+    mut emit: impl FnMut(std::ops::Range<usize>) -> Result<()>,
+) -> Result<()> {
+    let mut column = 0_usize;
+    while column < values.len() {
+        if !is_nonzero(&values[column]) {
+            column += 1;
+            continue;
+        }
+        let start = column;
+        while column < values.len() && is_nonzero(&values[column]) {
+            column += 1;
+        }
+        budget.record()?;
+        emit(start..column)?;
+    }
+    Ok(())
+}
 
 pub(super) fn rasterize_segments(
     source: &DicomAnnotationContext,

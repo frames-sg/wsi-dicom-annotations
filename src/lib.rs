@@ -17,6 +17,8 @@ mod parametric_map_tests;
 mod pathology_geojson_tests;
 #[cfg(test)]
 mod scheme_tests;
+#[cfg(test)]
+mod test_support;
 
 pub use annotations::*;
 

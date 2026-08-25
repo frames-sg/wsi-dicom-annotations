@@ -38,6 +38,11 @@ pub struct SidecarMetadata {
     series_instance_uid: Option<String>,
 }
 
+struct SidecarHeader {
+    sop_class_uid: String,
+    sop_instance_uid: String,
+}
+
 impl SidecarMetadata {
     #[must_use]
     pub fn path(&self) -> &Path {
@@ -61,7 +66,19 @@ impl SidecarMetadata {
 }
 
 pub fn annotation_object_kind(path: impl AsRef<Path>) -> Result<AnnotationObjectKind> {
-    let path = path.as_ref();
+    let header = read_sidecar_header(path.as_ref())?;
+    match header.sop_class_uid.as_str() {
+        uids::MICROSCOPY_BULK_SIMPLE_ANNOTATIONS_STORAGE => Ok(AnnotationObjectKind::Annotation),
+        uids::SEGMENTATION_STORAGE | uids::LABEL_MAP_SEGMENTATION_STORAGE => {
+            Ok(AnnotationObjectKind::Segmentation)
+        }
+        sop_class => Err(Error::Unsupported(format!(
+            "SOP Class {sop_class} is not ANN or SEG"
+        ))),
+    }
+}
+
+fn read_sidecar_header(path: &Path) -> Result<SidecarHeader> {
     let length = std::fs::metadata(path)
         .map_err(|source| Error::Io {
             path: path.to_path_buf(),
@@ -95,15 +112,10 @@ pub fn annotation_object_kind(path: impl AsRef<Path>) -> Result<AnnotationObject
     let meta = FileMetaTable::from_reader(&mut file).map_err(|error| {
         Error::InvalidInput(format!("invalid annotation object file meta: {error}"))
     })?;
-    match meta.media_storage_sop_class_uid() {
-        uids::MICROSCOPY_BULK_SIMPLE_ANNOTATIONS_STORAGE => Ok(AnnotationObjectKind::Annotation),
-        uids::SEGMENTATION_STORAGE | uids::LABEL_MAP_SEGMENTATION_STORAGE => {
-            Ok(AnnotationObjectKind::Segmentation)
-        }
-        sop_class => Err(Error::Unsupported(format!(
-            "SOP Class {sop_class} is not ANN or SEG"
-        ))),
-    }
+    Ok(SidecarHeader {
+        sop_class_uid: meta.media_storage_sop_class_uid().to_string(),
+        sop_instance_uid: meta.media_storage_sop_instance_uid().to_string(),
+    })
 }
 
 /// Discover local DICOM annotation sidecars without reading ANN coordinate arrays
@@ -146,36 +158,24 @@ fn inspect_sidecar(
     path: &Path,
     source: &DicomAnnotationContext,
 ) -> Option<Result<SidecarMetadata>> {
-    let length = std::fs::metadata(path).ok()?.len();
-    if !(132..=MAX_SIDECAR_FILE_BYTES).contains(&length) {
-        return None;
-    }
-    let mut file = std::fs::File::open(path).ok()?;
-    let mut preamble = [0_u8; 132];
-    if file.read_exact(&mut preamble).is_err() || &preamble[128..] != b"DICM" {
-        return None;
-    }
-    if file.seek(SeekFrom::Start(128)).is_err() {
-        return None;
-    }
-    let meta = match FileMetaTable::from_reader(&mut file) {
-        Ok(meta) => meta,
+    let header = match read_sidecar_header(path) {
+        Ok(header) => header,
         Err(_) => return None,
     };
     let (kind, stop_tag) =
-        if meta.media_storage_sop_class_uid() == uids::MICROSCOPY_BULK_SIMPLE_ANNOTATIONS_STORAGE {
+        if header.sop_class_uid == uids::MICROSCOPY_BULK_SIMPLE_ANNOTATIONS_STORAGE {
             (SidecarKind::Annotation, tags::ANNOTATION_GROUP_SEQUENCE)
-        } else if meta.media_storage_sop_class_uid() == uids::SEGMENTATION_STORAGE {
+        } else if header.sop_class_uid == uids::SEGMENTATION_STORAGE {
             (
                 SidecarKind::BinarySegmentation,
                 tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE,
             )
-        } else if meta.media_storage_sop_class_uid() == uids::LABEL_MAP_SEGMENTATION_STORAGE {
+        } else if header.sop_class_uid == uids::LABEL_MAP_SEGMENTATION_STORAGE {
             (
                 SidecarKind::LabelMapSegmentation,
                 tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE,
             )
-        } else if meta.media_storage_sop_class_uid() == uids::COMPREHENSIVE3_DSR_STORAGE {
+        } else if header.sop_class_uid == uids::COMPREHENSIVE3_DSR_STORAGE {
             (SidecarKind::StructuredReport, tags::CONTENT_SEQUENCE)
         } else {
             return None;
@@ -201,7 +201,7 @@ fn inspect_sidecar(
     Some(Ok(SidecarMetadata {
         path: path.to_path_buf(),
         kind,
-        sop_instance_uid: object.meta().media_storage_sop_instance_uid().to_string(),
+        sop_instance_uid: header.sop_instance_uid,
         series_instance_uid: optional_string(&object, tags::SERIES_INSTANCE_UID),
     }))
 }

@@ -5,44 +5,37 @@ use sha2::{Digest, Sha256};
 
 use crate::{Error, Result};
 
-use super::super::model::{AlgorithmIdentification, DicomCode, GenerationType};
+use super::super::model::{DicomCode, FindingSemantics, GenerationType};
 use super::super::profile::{profile_codes, ProfileAlgorithm, ProfileCode};
 use crate::annotations::json::validate_unique_object_keys;
 use crate::annotations::semantic_digest::{update_algorithm, update_code, update_text};
 
 #[derive(Debug, Clone)]
 pub(super) struct LabelSemantics {
-    pub(super) category: DicomCode,
-    pub(super) property_type: DicomCode,
-    pub(super) property_type_modifiers: Vec<DicomCode>,
-    pub(super) anatomic_regions: Vec<DicomCode>,
-    pub(super) primary_anatomic_structures: Vec<DicomCode>,
-    pub(super) generation_type: GenerationType,
-    pub(super) algorithms: Vec<AlgorithmIdentification>,
+    pub(super) finding: FindingSemantics,
     pub(super) all_optical_paths: bool,
     pub(super) optical_paths: Vec<String>,
     pub(super) all_z_planes: bool,
     pub(super) z_coordinates_mm: Vec<f64>,
-    pub(super) color: [u16; 3],
     pub(super) segment_label: String,
 }
 
 impl LabelSemantics {
     pub(super) fn update_digest(&self, digest: &mut Sha256) {
-        update_code(digest, &self.category);
-        update_code(digest, &self.property_type);
+        update_code(digest, self.finding.category());
+        update_code(digest, self.finding.property_type());
         for codes in [
-            self.property_type_modifiers.as_slice(),
-            self.anatomic_regions.as_slice(),
-            self.primary_anatomic_structures.as_slice(),
+            self.finding.property_type_modifiers(),
+            self.finding.anatomic_regions(),
+            self.finding.primary_anatomic_structures(),
         ] {
             digest.update((codes.len() as u64).to_le_bytes());
             for code in codes {
                 update_code(digest, code);
             }
         }
-        digest.update([self.generation_type as u8]);
-        for algorithm in &self.algorithms {
+        digest.update([self.finding.generation_type() as u8]);
+        for algorithm in self.finding.algorithms() {
             update_algorithm(digest, algorithm);
         }
         digest.update([u8::from(self.all_optical_paths)]);
@@ -53,7 +46,7 @@ impl LabelSemantics {
         for coordinate in &self.z_coordinates_mm {
             digest.update(coordinate.to_bits().to_le_bytes());
         }
-        for component in self.color {
+        for component in self.finding.recommended_display_cielab() {
             digest.update(component.to_le_bytes());
         }
         update_text(digest, &self.segment_label);
@@ -233,33 +226,22 @@ impl RawLabel {
             .transpose()?
             .into_iter()
             .collect::<Vec<_>>();
-        match generation_type {
-            GenerationType::Manual if !algorithms.is_empty() => {
-                return Err(Error::InvalidInput(
-                    "manual label mapping cannot identify a generation algorithm".into(),
-                ));
-            }
-            GenerationType::Semiautomatic | GenerationType::Automatic if algorithms.is_empty() => {
-                return Err(Error::InvalidInput(
-                    "automatic and semiautomatic label mappings require algorithm identity".into(),
-                ));
-            }
-            _ => {}
-        }
         self.applicability.validate()?;
         Ok(LabelSemantics {
-            category: self.category.into_code()?,
-            property_type: self.property_type.into_code()?,
-            property_type_modifiers: profile_codes(self.property_type_modifiers)?,
-            anatomic_regions: profile_codes(self.anatomic_regions)?,
-            primary_anatomic_structures: profile_codes(self.primary_anatomic_structures)?,
-            generation_type,
-            algorithms,
+            finding: FindingSemantics::new(
+                generation_type,
+                algorithms,
+                self.category.into_code()?,
+                self.property_type.into_code()?,
+                profile_codes(self.property_type_modifiers)?,
+                profile_codes(self.anatomic_regions)?,
+                profile_codes(self.primary_anatomic_structures)?,
+                self.recommended_display_cielab,
+            )?,
             all_optical_paths: self.applicability.all_optical_paths,
             optical_paths: self.applicability.optical_paths,
             all_z_planes: self.applicability.all_z_planes,
             z_coordinates_mm: self.applicability.z_coordinates_mm,
-            color: self.recommended_display_cielab,
             segment_label: self.segment_label,
         })
     }

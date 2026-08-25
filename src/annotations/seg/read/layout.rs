@@ -1,4 +1,11 @@
-use super::*;
+use dicom_core::Tag;
+use dicom_dictionary_std::tags;
+use dicom_object::InMemDicomObject;
+
+use crate::annotations::context::DicomAnnotationContext;
+use crate::annotations::dicom_dataset::{optional_string, required_u32};
+use crate::annotations::seg::BinarySegmentationFrame;
+use crate::{Error, Result};
 
 fn read_frame_position(
     item: &InMemDicomObject,

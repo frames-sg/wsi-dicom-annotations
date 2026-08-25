@@ -88,18 +88,11 @@ fn annotation_group(feature: &ProfiledFeature, companion_sr: bool) -> Result<Ann
         feature.tracking_uid.clone(),
         feature.name.clone(),
         String::new(),
-        semantics.generation_type,
-        semantics.algorithms.clone(),
-        semantics.category.clone(),
-        semantics.property_type.clone(),
-        semantics.property_type_modifiers.clone(),
-        semantics.anatomic_regions.clone(),
-        semantics.primary_anatomic_structures.clone(),
+        semantics.finding.clone(),
         semantics.all_optical_paths,
         semantics.optical_paths.clone(),
         semantics.all_z_planes,
         semantics.z_coordinates_mm.clone(),
-        semantics.color,
         geometry,
         measurements,
     )
@@ -167,18 +160,15 @@ fn segmentation_segment(feature: &ProfiledFeature) -> Result<SegmentationSegment
         .collect();
     let segment = SegmentationSegment::new(
         semantics.segment_label.clone(),
-        semantics.category.clone(),
-        semantics.property_type.clone(),
-        semantics.color,
+        semantics.finding.category().clone(),
+        semantics.finding.property_type().clone(),
+        semantics.finding.recommended_display_cielab(),
         outer_polygons,
         Vec::new(),
     )?
     .with_component_holes(component_holes)?
     .with_description(feature.name.clone())?
-    .with_generation(semantics.generation_type, semantics.algorithms.clone())?
-    .with_property_type_modifiers(semantics.property_type_modifiers.clone())
-    .with_anatomic_regions(semantics.anatomic_regions.clone())
-    .with_primary_anatomic_structures(semantics.primary_anatomic_structures.clone())
+    .with_finding_semantics(semantics.finding.clone())?
     .with_tracking(feature.tracking_id.clone(), feature.tracking_uid.clone())?;
     Ok(segment)
 }

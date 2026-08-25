@@ -3,11 +3,11 @@ use std::io::Write;
 use dicom_core::value::{PrimitiveValue, Value};
 use dicom_dictionary_std::{tags, uids};
 
-use crate::annotation_tests::write_source_wsi;
 use crate::metadata::open_metadata_object;
+use crate::test_support::write_source_wsi;
 use crate::{
-    DicomAnnotationContext, ParametricMapDocument, RasterChannelSelection, RasterInputFormat,
-    RasterProfile,
+    DerivedObjectProducer, DicomAnnotationContext, ParametricMapDocument, RasterChannelSelection,
+    RasterInputFormat, RasterProfile,
 };
 
 #[test]
@@ -147,7 +147,10 @@ fn float32_parametric_map_streams_required_metadata_and_exact_pixels() {
         &input_path,
         RasterChannelSelection::Auto,
     )
-    .unwrap();
+    .unwrap()
+    .with_producer(
+        DerivedObjectProducer::new(44, "Acme Pathology", "Acme PM", "PM-42", "7.3.1").unwrap(),
+    );
 
     let written = document.write_single(&output_path, 2_000_000_000).unwrap();
 
@@ -157,6 +160,22 @@ fn float32_parametric_map_streams_required_metadata_and_exact_pixels() {
     assert_eq!(
         object.meta().media_storage_sop_class_uid(),
         uids::PARAMETRIC_MAP_STORAGE
+    );
+    assert_eq!(
+        object
+            .element(tags::MANUFACTURER_MODEL_NAME)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "Acme PM"
+    );
+    assert_eq!(
+        object
+            .element(tags::SERIES_NUMBER)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "44"
     );
     assert_eq!(
         object

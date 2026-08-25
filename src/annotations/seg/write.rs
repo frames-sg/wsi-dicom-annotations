@@ -1,5 +1,19 @@
-use super::*;
-use crate::annotations::dicom_dataset::dimension_index_item;
+use dicom_core::value::PrimitiveValue;
+use dicom_core::{DataElement, VR};
+use dicom_dictionary_std::tags;
+use dicom_object::InMemDicomObject;
+
+use super::read::segments_overlap;
+use super::{BinarySegmentationFrame, SegmentationDocument, SegmentationSegment};
+use crate::annotations::coded_content::{code_item, write_algorithm};
+use crate::annotations::context::DicomAnnotationContext;
+use crate::annotations::derived_object::sop_reference_item;
+use crate::annotations::dicom_dataset::{
+    dicom_now, dimension_index_item, new_dicom_uid, put_text, sequence,
+};
+use crate::annotations::dicom_value::format_ds;
+use crate::annotations::model::{AlgorithmIdentification, DicomCode, GenerationType};
+use crate::{Error, Result};
 
 pub(super) fn add_segmentation_attributes(
     object: &mut InMemDicomObject,

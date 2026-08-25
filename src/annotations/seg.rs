@@ -3,35 +3,24 @@ mod raster;
 mod read;
 mod write;
 
-use std::collections::BTreeSet;
-use std::path::Path;
-
-use dicom_core::value::PrimitiveValue;
-use dicom_core::{DataElement, Tag, VR};
-use dicom_dictionary_std::{tags, uids};
-use dicom_object::InMemDicomObject;
-use sha2::{Digest, Sha256};
+#[cfg(test)]
+#[path = "seg/performance_tests.rs"]
+mod performance_tests;
+#[cfg(test)]
+#[path = "seg/run_tests.rs"]
+mod run_tests;
+#[cfg(test)]
+#[path = "seg/vectorization_tests.rs"]
+mod vectorization_tests;
 
 use crate::{Error, Result};
 
-use super::coded_content::{
-    code_item, read_algorithms, read_code_at, read_codes_at, write_algorithm,
-};
 use super::context::DicomAnnotationContext;
-use super::derived_object::{
-    add_common_instance_reference, build_common_object, sop_reference_item, SeriesEquipmentMetadata,
-};
-use super::dicom_dataset::{
-    dicom_now, new_dicom_uid, optional_string, put_text, required_string, required_u16,
-    required_u32, sequence,
-};
-use super::dicom_file::{atomic_write_dicom, enforce_file_limit, ensure_sidecar_destination};
-use super::dicom_value::format_ds;
+use super::derived_object::DerivedObjectProducer;
 use super::model::AnnotationGroup;
 use super::model::{
-    polygon_contains_point, validate_generation, validate_polygon, validate_text,
-    AlgorithmIdentification, DiagnosticDisposition, DiagnosticSeverity, DicomCode, GenerationType,
-    InteroperabilityDiagnostic, Point2,
+    validate_polygon, validate_text, AlgorithmIdentification, DicomCode, FindingSemantics,
+    GenerationType, InteroperabilityDiagnostic, Point2,
 };
 
 const MAX_SEG_FILE_BYTES: u64 = 1024 * 1024 * 1024;
@@ -46,21 +35,45 @@ pub enum SegmentationKind {
     Fractional,
 }
 
+/// Controls whether SEG-to-ANN projection may discard nonrepresentable semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SegToAnnConversionPolicy {
+    RejectLoss,
+    AllowLoss,
+}
+
+/// Editable ANN groups projected from a SEG, together with typed loss diagnostics.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VectorizedAnnotations {
+    groups: Vec<AnnotationGroup>,
+    diagnostics: Vec<InteroperabilityDiagnostic>,
+}
+
+impl VectorizedAnnotations {
+    #[must_use]
+    pub fn groups(&self) -> &[AnnotationGroup] {
+        &self.groups
+    }
+
+    #[must_use]
+    pub fn diagnostics(&self) -> &[InteroperabilityDiagnostic] {
+        &self.diagnostics
+    }
+
+    #[must_use]
+    pub fn into_groups(self) -> Vec<AnnotationGroup> {
+        self.groups
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct SegmentationSegment {
     source_segment_number: Option<u16>,
     label: String,
     description: String,
-    generation_type: GenerationType,
-    algorithms: Vec<AlgorithmIdentification>,
-    category: DicomCode,
-    property_type: DicomCode,
-    property_type_modifiers: Vec<DicomCode>,
+    finding: FindingSemantics,
     tracking_id: Option<String>,
     tracking_uid: Option<String>,
-    anatomic_regions: Vec<DicomCode>,
-    primary_anatomic_structures: Vec<DicomCode>,
-    recommended_display_cielab: [u16; 3],
     outer_polygons: Vec<Vec<Point2>>,
     exclusion_polygons: Vec<Vec<Point2>>,
     // `Some` preserves GeoJSON MultiPolygon ownership: each entry contains
@@ -96,16 +109,9 @@ impl SegmentationSegment {
             source_segment_number: None,
             label,
             description: String::new(),
-            generation_type: GenerationType::Manual,
-            algorithms: Vec::new(),
-            category,
-            property_type,
-            property_type_modifiers: Vec::new(),
+            finding: FindingSemantics::manual(category, property_type, recommended_display_cielab),
             tracking_id: None,
             tracking_uid: None,
-            anatomic_regions: Vec::new(),
-            primary_anatomic_structures: Vec::new(),
-            recommended_display_cielab,
             outer_polygons,
             exclusion_polygons,
             component_holes: None,
@@ -142,15 +148,13 @@ impl SegmentationSegment {
         generation_type: GenerationType,
         algorithms: Vec<AlgorithmIdentification>,
     ) -> Result<Self> {
-        validate_generation(generation_type, &algorithms)?;
-        self.generation_type = generation_type;
-        self.algorithms = algorithms;
+        self.finding = self.finding.with_generation(generation_type, algorithms)?;
         Ok(self)
     }
 
     #[must_use]
     pub fn with_property_type_modifiers(mut self, modifiers: Vec<DicomCode>) -> Self {
-        self.property_type_modifiers = modifiers;
+        self.finding = self.finding.with_property_type_modifiers(modifiers);
         self
     }
 
@@ -170,14 +174,20 @@ impl SegmentationSegment {
 
     #[must_use]
     pub fn with_anatomic_regions(mut self, regions: Vec<DicomCode>) -> Self {
-        self.anatomic_regions = regions;
+        self.finding = self.finding.with_anatomic_regions(regions);
         self
     }
 
     #[must_use]
     pub fn with_primary_anatomic_structures(mut self, structures: Vec<DicomCode>) -> Self {
-        self.primary_anatomic_structures = structures;
+        self.finding = self.finding.with_primary_anatomic_structures(structures);
         self
+    }
+
+    pub(crate) fn with_finding_semantics(mut self, finding: FindingSemantics) -> Result<Self> {
+        finding.validate()?;
+        self.finding = finding;
+        Ok(self)
     }
 
     #[must_use]
@@ -192,12 +202,12 @@ impl SegmentationSegment {
 
     #[must_use]
     pub const fn generation_type(&self) -> GenerationType {
-        self.generation_type
+        self.finding.generation_type()
     }
 
     #[must_use]
     pub fn algorithms(&self) -> &[AlgorithmIdentification] {
-        &self.algorithms
+        self.finding.algorithms()
     }
 
     #[must_use]
@@ -207,17 +217,17 @@ impl SegmentationSegment {
 
     #[must_use]
     pub fn category(&self) -> &DicomCode {
-        &self.category
+        self.finding.category()
     }
 
     #[must_use]
     pub fn property_type(&self) -> &DicomCode {
-        &self.property_type
+        self.finding.property_type()
     }
 
     #[must_use]
     pub fn property_type_modifiers(&self) -> &[DicomCode] {
-        &self.property_type_modifiers
+        self.finding.property_type_modifiers()
     }
 
     #[must_use]
@@ -232,17 +242,17 @@ impl SegmentationSegment {
 
     #[must_use]
     pub fn anatomic_regions(&self) -> &[DicomCode] {
-        &self.anatomic_regions
+        self.finding.anatomic_regions()
     }
 
     #[must_use]
     pub fn primary_anatomic_structures(&self) -> &[DicomCode] {
-        &self.primary_anatomic_structures
+        self.finding.primary_anatomic_structures()
     }
 
     #[must_use]
     pub const fn recommended_display_cielab(&self) -> [u16; 3] {
-        self.recommended_display_cielab
+        self.finding.recommended_display_cielab()
     }
 
     #[must_use]
@@ -411,16 +421,9 @@ pub struct SegmentationDocument {
     content_label: String,
     content_description: String,
     content_creator_name: Option<String>,
-    series_equipment: SeriesEquipmentMetadata,
+    producer: DerivedObjectProducer,
     segments: Vec<SegmentationSegment>,
     imported_binary_frames: Option<Vec<BinarySegmentationFrame>>,
     imported_fractional_frames: Option<Vec<FractionalSegmentationFrame>>,
     diagnostics: Vec<InteroperabilityDiagnostic>,
 }
-
-use raster::{merge_binary_runs, merge_fractional_runs, rasterize_segments};
-use read::{
-    read_binary_frames, read_fractional_frames, read_labelmap_frames, read_segments,
-    segments_overlap, validate_source_reference,
-};
-use write::add_segmentation_attributes;

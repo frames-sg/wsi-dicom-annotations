@@ -32,7 +32,7 @@ pub(super) fn write_ann(
         &document.sop_instance_uid,
         &document.series_instance_uid,
         "ANN",
-        &document.series_equipment,
+        &document.producer,
     )?;
     let source_metadata = document.source.source_metadata()?;
     let (date, time) = dicom_now();

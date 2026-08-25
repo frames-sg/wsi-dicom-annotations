@@ -1,6 +1,23 @@
 mod layout;
 
-use super::*;
+use std::collections::BTreeSet;
+
+use dicom_core::Tag;
+use dicom_dictionary_std::tags;
+use dicom_object::InMemDicomObject;
+
+use super::{
+    BinarySegmentationFrame, FractionalSegmentationFrame, SegmentationSegment,
+    MAX_SEGMENTATION_FRAMES, MAX_SEGMENTATION_PIXELS,
+};
+use crate::annotations::coded_content::{read_algorithms, read_code_at, read_codes_at};
+use crate::annotations::context::DicomAnnotationContext;
+use crate::annotations::dicom_dataset::{optional_string, required_string, required_u16};
+use crate::annotations::model::{
+    DiagnosticDisposition, DiagnosticSeverity, FindingSemantics, GenerationType,
+    InteroperabilityDiagnostic,
+};
+use crate::{Error, Result};
 use layout::read_frame_positions;
 pub(super) use layout::{segments_overlap, validate_source_reference};
 
@@ -47,15 +64,41 @@ pub(super) fn read_segments(
                 &format!("{path}.SegmentationAlgorithmIdentificationSequence"),
                 diagnostics,
             )?;
-            if !matches!(generation_type, GenerationType::Manual) && algorithms.is_empty() {
-                diagnostics.push(InteroperabilityDiagnostic::new(
-                    "ALGORITHM_IDENTIFICATION_WOULD_DROP",
-                    DiagnosticSeverity::Warning,
-                    format!("{path}.SegmentationAlgorithmIdentificationSequence"),
-                    DiagnosticDisposition::WouldDrop,
-                    "automatic segment lacks the complete algorithm identification needed for rewrite",
-                ));
-            }
+            let finding = FindingSemantics::new(
+                generation_type,
+                algorithms,
+                read_code_at(
+                    item,
+                    tags::SEGMENTED_PROPERTY_CATEGORY_CODE_SEQUENCE,
+                    &format!("{path}.SegmentedPropertyCategoryCodeSequence"),
+                    diagnostics,
+                )?,
+                read_code_at(
+                    item,
+                    tags::SEGMENTED_PROPERTY_TYPE_CODE_SEQUENCE,
+                    &format!("{path}.SegmentedPropertyTypeCodeSequence"),
+                    diagnostics,
+                )?,
+                read_codes_at(
+                    item,
+                    tags::SEGMENTED_PROPERTY_TYPE_MODIFIER_CODE_SEQUENCE,
+                    &format!("{path}.SegmentedPropertyTypeModifierCodeSequence"),
+                    diagnostics,
+                )?,
+                read_codes_at(
+                    item,
+                    tags::ANATOMIC_REGION_SEQUENCE,
+                    &format!("{path}.AnatomicRegionSequence"),
+                    diagnostics,
+                )?,
+                read_codes_at(
+                    item,
+                    tags::PRIMARY_ANATOMIC_STRUCTURE_SEQUENCE,
+                    &format!("{path}.PrimaryAnatomicStructureSequence"),
+                    diagnostics,
+                )?,
+                color,
+            )?;
             let tracking_id = optional_string(item, tags::TRACKING_ID);
             let tracking_uid = optional_string(item, tags::TRACKING_UID);
             if tracking_id.is_some() != tracking_uid.is_some() {
@@ -71,41 +114,9 @@ pub(super) fn read_segments(
                 source_segment_number: Some(required_u16(item, tags::SEGMENT_NUMBER)?),
                 label: required_string(item, tags::SEGMENT_LABEL)?,
                 description: optional_string(item, tags::SEGMENT_DESCRIPTION).unwrap_or_default(),
-                generation_type,
-                algorithms,
-                category: read_code_at(
-                    item,
-                    tags::SEGMENTED_PROPERTY_CATEGORY_CODE_SEQUENCE,
-                    &format!("{path}.SegmentedPropertyCategoryCodeSequence"),
-                    diagnostics,
-                )?,
-                property_type: read_code_at(
-                    item,
-                    tags::SEGMENTED_PROPERTY_TYPE_CODE_SEQUENCE,
-                    &format!("{path}.SegmentedPropertyTypeCodeSequence"),
-                    diagnostics,
-                )?,
-                property_type_modifiers: read_codes_at(
-                    item,
-                    tags::SEGMENTED_PROPERTY_TYPE_MODIFIER_CODE_SEQUENCE,
-                    &format!("{path}.SegmentedPropertyTypeModifierCodeSequence"),
-                    diagnostics,
-                )?,
+                finding,
                 tracking_id,
                 tracking_uid,
-                anatomic_regions: read_codes_at(
-                    item,
-                    tags::ANATOMIC_REGION_SEQUENCE,
-                    &format!("{path}.AnatomicRegionSequence"),
-                    diagnostics,
-                )?,
-                primary_anatomic_structures: read_codes_at(
-                    item,
-                    tags::PRIMARY_ANATOMIC_STRUCTURE_SEQUENCE,
-                    &format!("{path}.PrimaryAnatomicStructureSequence"),
-                    diagnostics,
-                )?,
-                recommended_display_cielab: color,
                 outer_polygons: Vec::new(),
                 exclusion_polygons: Vec::new(),
                 component_holes: None,

@@ -12,6 +12,7 @@ use super::{
 };
 use crate::annotations::coded_content::read_code_at;
 use crate::annotations::context::DicomAnnotationContext;
+use crate::annotations::derived_object::DerivedObjectProducer;
 use crate::annotations::dicom_dataset::{optional_string, required_string, sequence_items};
 use crate::annotations::dicom_file::enforce_file_limit;
 use crate::annotations::model::{
@@ -89,6 +90,7 @@ pub(super) fn read_sr(
         sop_instance_uid: required_string(&object, tags::SOP_INSTANCE_UID)?,
         series_instance_uid: required_string(&object, tags::SERIES_INSTANCE_UID)?,
         device_observer_uid,
+        producer: DerivedObjectProducer::read(&object),
         report_title,
         procedures_reported,
         groups,

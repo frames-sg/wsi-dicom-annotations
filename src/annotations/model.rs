@@ -2,6 +2,7 @@ mod algorithm;
 mod annotation;
 mod code;
 mod diagnostic;
+mod finding;
 mod geometry;
 mod tracking;
 
@@ -18,4 +19,5 @@ pub use tracking::TrackingIdentity;
 
 pub(crate) use algorithm::validate_generation;
 pub(crate) use code::{is_valid_dicom_uid, validate_text, DicomCodeQualifiers};
+pub(crate) use finding::FindingSemantics;
 pub(crate) use geometry::clockwise_polygon;

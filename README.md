@@ -17,6 +17,47 @@ Applications provide an existing DICOM VL Whole Slide Microscopy instance as
 the source context. The crate preserves Study and Frame of Reference identity
 while assigning new Series and SOP Instance identities to derived objects.
 
+## Checked editing and derived-object identity
+
+Invariant-bearing ANN collections are edited atomically. Replace point or
+polygon geometry with `AnnotationGroup::replace_points` or
+`AnnotationGroup::replace_polygons`, and replace document groups with
+`AnnotationDocument::replace_group` or `AnnotationDocument::replace_groups`.
+An invalid replacement returns an error and leaves the original value intact.
+
+New ANN, SEG, SR, and PM objects use a neutral library producer by default.
+Applications should identify themselves explicitly when publishing derived
+objects:
+
+```no_run
+use wsi_dicom_annotations::{DerivedObjectProducer, Result};
+
+# fn main() -> Result<()> {
+let producer = DerivedObjectProducer::new(
+    71,
+    "Example Pathology",
+    "Example Workstation",
+    "WORKSTATION-1",
+    "3.0",
+)?
+.with_series_description("Reviewed annotations")?;
+// Apply the same value with `document.with_producer(producer)` to ANN, SEG,
+// SR, or feature-gated PM documents before writing.
+# let _ = producer;
+# Ok(())
+# }
+```
+
+`PathologyDicomDocuments::with_producers` applies distinct caller-owned ANN,
+SEG, and SR series metadata to a companion-document set before publication.
+
+SEG-to-ANN conversion is an explicit editing projection. Call
+`vectorized_annotations(SegToAnnConversionPolicy::RejectLoss)` to block
+nonrepresentable identity or applicability semantics. Use `AllowLoss` only
+when the caller will inspect and surface `VectorizedAnnotations::diagnostics`.
+The removed `vectorized_annotation_groups` API has no silent compatibility
+wrapper.
+
 ## GeoJSON to DICOM
 
 QuPath classification labels are never guessed as clinical terminology. A

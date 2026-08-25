@@ -140,7 +140,9 @@ pub(super) fn add_algorithm_provenance(
         &mut equipment,
         tags::MANUFACTURER,
         VR::LO,
-        algorithm.source().unwrap_or("Frames"),
+        algorithm
+            .source()
+            .unwrap_or(document.producer.manufacturer()),
     );
     put_text(
         &mut equipment,
