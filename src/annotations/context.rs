@@ -9,6 +9,7 @@ use crate::{Error, Result};
 
 use super::dicom_dataset::{
     optional_string, optional_u32, required_string, required_u16, required_u32,
+    validated_optional_long_string, validated_optional_uid,
 };
 use super::model::{Point2, Point3};
 
@@ -26,6 +27,7 @@ pub struct DicomAnnotationContext {
     series_instance_uid: String,
     study_instance_uid: String,
     frame_of_reference_uid: Option<String>,
+    container_identifier: Option<String>,
     total_pixel_matrix_columns: u32,
     total_pixel_matrix_rows: u32,
     tile_columns: u16,
@@ -80,6 +82,7 @@ impl DicomAnnotationContext {
             series_instance_uid: required_string(&object, tags::SERIES_INSTANCE_UID)?,
             study_instance_uid: required_string(&object, tags::STUDY_INSTANCE_UID)?,
             frame_of_reference_uid: optional_string(&object, tags::FRAME_OF_REFERENCE_UID),
+            container_identifier: optional_string(&object, tags::CONTAINER_IDENTIFIER),
             total_pixel_matrix_columns,
             total_pixel_matrix_rows,
             tile_columns,
@@ -129,6 +132,12 @@ impl DicomAnnotationContext {
     #[must_use]
     pub fn frame_of_reference_uid(&self) -> Option<&str> {
         self.frame_of_reference_uid.as_deref()
+    }
+
+    /// Returns the source slide's Container Identifier when it is present.
+    #[must_use]
+    pub fn container_identifier(&self) -> Option<&str> {
+        self.container_identifier.as_deref()
     }
 
     #[must_use]
@@ -317,6 +326,46 @@ impl DicomAnnotationContext {
 
     pub(crate) fn source_metadata(&self) -> Result<DefaultDicomObject> {
         open_metadata_object(&self.source_path)
+    }
+
+    pub(crate) fn validate_volume_source_identity(
+        &self,
+        metadata: &DefaultDicomObject,
+    ) -> Result<()> {
+        let actual_sop_instance_uid = required_string(metadata, tags::SOP_INSTANCE_UID)?;
+        let referenced_sop_instance_uid =
+            optional_string(metadata, tags::SOP_INSTANCE_UID_OF_CONCATENATION_SOURCE)
+                .unwrap_or(actual_sop_instance_uid);
+        if metadata.meta().media_storage_sop_class_uid() != self.sop_class_uid
+            || referenced_sop_instance_uid != self.sop_instance_uid
+        {
+            return Err(Error::InvalidInput(
+                "source SOP identity changed after the annotation context was created".into(),
+            ));
+        }
+        let frame_of_reference_uid = validated_optional_uid(
+            metadata,
+            tags::FRAME_OF_REFERENCE_UID,
+            "source Frame of Reference UID",
+        )?;
+        if frame_of_reference_uid.as_deref() != self.frame_of_reference_uid.as_deref() {
+            return Err(Error::InvalidInput(
+                "source Frame of Reference UID changed after the annotation context was created"
+                    .into(),
+            ));
+        }
+        let container_identifier = validated_optional_long_string(
+            metadata,
+            tags::CONTAINER_IDENTIFIER,
+            "source Container Identifier",
+        )?;
+        if container_identifier.as_deref() != self.container_identifier.as_deref() {
+            return Err(Error::InvalidInput(
+                "source Container Identifier changed after the annotation context was created"
+                    .into(),
+            ));
+        }
+        Ok(())
     }
 
     pub(crate) fn require_shared_slide_frame(&self, other: &Self) -> Result<()> {

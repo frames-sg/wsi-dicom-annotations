@@ -9,8 +9,8 @@ use crate::{Error, Result};
 
 use super::super::coded_content::{code_item, write_algorithm};
 use super::super::derived_object::{
-    add_common_instance_reference, build_common_object, copy_or_empty, series_reference_item,
-    sop_reference_item,
+    add_common_instance_reference, build_common_object_from_source, copy_or_empty,
+    series_reference_item, sop_reference_item,
 };
 use super::super::dicom_dataset::{dicom_now, put_optional_text, put_text, sequence};
 use super::super::dicom_file::{atomic_write_dicom, ensure_sidecar_destination};
@@ -26,15 +26,23 @@ pub(super) fn write_ann(
     ensure_sidecar_destination(path, document.source.source_path())?;
     document.validate()?;
     document.ensure_roundtrip_safe(allow_lossy)?;
-    let mut object = build_common_object(
+    let source_metadata = document.source.source_metadata()?;
+    let preserve_volume_identity = document.coordinate_type == "2D"
+        && document.pixel_origin_interpretation.as_deref() == Some("VOLUME");
+    if preserve_volume_identity {
+        document
+            .source
+            .validate_volume_source_identity(&source_metadata)?;
+    }
+    let mut object = build_common_object_from_source(
+        &source_metadata,
         &document.source,
         uids::MICROSCOPY_BULK_SIMPLE_ANNOTATIONS_STORAGE,
         &document.sop_instance_uid,
         &document.series_instance_uid,
         "ANN",
         &document.producer,
-    )?;
-    let source_metadata = document.source.source_metadata()?;
+    );
     let (date, time) = dicom_now();
     put_text(&mut object, tags::CONTENT_DATE, VR::DA, &date);
     put_text(&mut object, tags::CONTENT_TIME, VR::TM, &time);
@@ -74,6 +82,20 @@ pub(super) fn write_ann(
                     Error::InvalidInput("2D ANN has no Pixel Origin Interpretation".into())
                 })?,
         );
+        if preserve_volume_identity {
+            put_optional_text(
+                &mut object,
+                tags::FRAME_OF_REFERENCE_UID,
+                VR::UI,
+                document.source.frame_of_reference_uid(),
+            );
+            put_optional_text(
+                &mut object,
+                tags::CONTAINER_IDENTIFIER,
+                VR::LO,
+                document.source.container_identifier(),
+            );
+        }
     } else if let Some(frame_of_reference_uid) = document.source.frame_of_reference_uid() {
         put_text(
             &mut object,

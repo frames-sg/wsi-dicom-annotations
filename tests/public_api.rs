@@ -26,6 +26,7 @@ fn downstream_ann_seg_and_sr_workflow_uses_only_public_apis() {
     let source_path = directory.path().join("source.dcm");
     write_source_wsi(&source_path);
     let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    assert_eq!(source.container_identifier(), Some("PUBLIC-API-SLIDE"));
     let producer = DerivedObjectProducer::new(
         71,
         "Downstream Pathology",
@@ -68,6 +69,23 @@ fn downstream_ann_seg_and_sr_workflow_uses_only_public_apis() {
     assert_eq!(
         imported_ann.producer().manufacturer(),
         "Downstream Pathology"
+    );
+    let raw_ann = dicom_object::open_file(&ann_path).unwrap();
+    assert_eq!(
+        raw_ann
+            .element(tags::FRAME_OF_REFERENCE_UID)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "2.25.7003"
+    );
+    assert_eq!(
+        raw_ann
+            .element(tags::CONTAINER_IDENTIFIER)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "PUBLIC-API-SLIDE"
     );
 
     let seg_path = directory.path().join("segmentation.dcm");
@@ -176,6 +194,7 @@ fn write_source_wsi(path: &Path) {
         DataElement::new(tags::STUDY_INSTANCE_UID, VR::UI, "2.25.7001"),
         DataElement::new(tags::SERIES_INSTANCE_UID, VR::UI, "2.25.7002"),
         DataElement::new(tags::FRAME_OF_REFERENCE_UID, VR::UI, "2.25.7003"),
+        DataElement::new(tags::CONTAINER_IDENTIFIER, VR::LO, "PUBLIC-API-SLIDE"),
         DataElement::new(tags::PATIENT_NAME, VR::PN, "Downstream^Test"),
         DataElement::new(tags::PATIENT_ID, VR::LO, "PUBLIC-API"),
         DataElement::new(tags::STUDY_DATE, VR::DA, "20260820"),

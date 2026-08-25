@@ -1,6 +1,6 @@
 use dicom_core::{Tag, VR};
 use dicom_dictionary_std::tags;
-use dicom_object::InMemDicomObject;
+use dicom_object::{DefaultDicomObject, InMemDicomObject};
 
 use crate::{Error, Result};
 
@@ -164,11 +164,31 @@ pub(crate) fn build_common_object(
     producer: &DerivedObjectProducer,
 ) -> Result<InMemDicomObject> {
     let source = context.source_metadata()?;
+    Ok(build_common_object_from_source(
+        &source,
+        context,
+        sop_class_uid,
+        sop_instance_uid,
+        series_instance_uid,
+        modality,
+        producer,
+    ))
+}
+
+pub(crate) fn build_common_object_from_source(
+    source: &DefaultDicomObject,
+    context: &DicomAnnotationContext,
+    sop_class_uid: &str,
+    sop_instance_uid: &str,
+    series_instance_uid: &str,
+    modality: &str,
+    producer: &DerivedObjectProducer,
+) -> InMemDicomObject {
     let mut object = InMemDicomObject::new_empty();
-    copy_or_empty(&source, &mut object, tags::PATIENT_NAME, VR::PN);
-    copy_or_empty(&source, &mut object, tags::PATIENT_ID, VR::LO);
-    copy_or_empty(&source, &mut object, tags::PATIENT_BIRTH_DATE, VR::DA);
-    copy_or_empty(&source, &mut object, tags::PATIENT_SEX, VR::CS);
+    copy_or_empty(source, &mut object, tags::PATIENT_NAME, VR::PN);
+    copy_or_empty(source, &mut object, tags::PATIENT_ID, VR::LO);
+    copy_or_empty(source, &mut object, tags::PATIENT_BIRTH_DATE, VR::DA);
+    copy_or_empty(source, &mut object, tags::PATIENT_SEX, VR::CS);
     put_text(
         &mut object,
         tags::STUDY_INSTANCE_UID,
@@ -182,7 +202,7 @@ pub(crate) fn build_common_object(
         (tags::STUDY_ID, VR::SH),
         (tags::ACCESSION_NUMBER, VR::SH),
     ] {
-        copy_or_empty(&source, &mut object, tag, vr);
+        copy_or_empty(source, &mut object, tag, vr);
     }
     for tag in [
         tags::ISSUER_OF_PATIENT_ID,
@@ -196,10 +216,10 @@ pub(crate) fn build_common_object(
         tags::ISSUER_OF_THE_CONTAINER_IDENTIFIER_SEQUENCE,
         tags::CONTAINER_TYPE_CODE_SEQUENCE,
     ] {
-        copy_if_present(&source, &mut object, tag);
+        copy_if_present(source, &mut object, tag);
     }
     put_text(&mut object, tags::MODALITY, VR::CS, modality);
-    copy_if_present(&source, &mut object, tags::LATERALITY);
+    copy_if_present(source, &mut object, tags::LATERALITY);
     put_text(
         &mut object,
         tags::SERIES_INSTANCE_UID,
@@ -224,7 +244,7 @@ pub(crate) fn build_common_object(
         VR::CS,
         "ISO_IR 192",
     );
-    Ok(object)
+    object
 }
 
 pub(crate) fn add_common_instance_reference(

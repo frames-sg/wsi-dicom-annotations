@@ -16,6 +16,11 @@ conversion can disable default features to avoid those raster dependencies.
 Applications provide an existing DICOM VL Whole Slide Microscopy instance as
 the source context. The crate preserves Study and Frame of Reference identity
 while assigning new Series and SOP Instance identities to derived objects.
+For 2D ANN in the `VOLUME` pixel-origin interpretation, the writer preserves
+the exact referenced source SOP Class and Instance UIDs and copies a valid
+source Frame of Reference UID and Container Identifier when present. It omits
+either optional identity when the source omits it; these copied attributes aid
+viewer association and do not replace the normative 2D image reference.
 
 ## Checked editing and derived-object identity
 

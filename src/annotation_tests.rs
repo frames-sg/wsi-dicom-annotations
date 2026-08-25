@@ -74,6 +74,8 @@ fn add_specimen_metadata(object: &mut dicom_object::DefaultDicomObject) {
     ));
 }
 
+#[path = "annotation_tests/ann_identity.rs"]
+mod ann_identity;
 #[path = "annotation_tests/ann_roundtrip.rs"]
 mod ann_roundtrip;
 #[path = "annotation_tests/coordinate_projection.rs"]

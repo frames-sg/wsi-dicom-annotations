@@ -10,6 +10,7 @@ use super::super::context::DicomAnnotationContext;
 use super::super::derived_object::DerivedObjectProducer;
 use super::super::dicom_dataset::{
     optional_string, optional_strings, read_yes_no, required_string, sequence_items,
+    validated_optional_long_string, validated_optional_uid,
 };
 use super::super::dicom_file::enforce_file_limit;
 use super::super::model::{
@@ -86,6 +87,9 @@ pub(super) fn read_ann(path: &Path, source: &DicomAnnotationContext) -> Result<A
                         "2D ANN is missing Pixel Origin Interpretation".into(),
                     ));
                 }
+            }
+            if pixel_origin.as_deref() == Some("VOLUME") {
+                validate_volume_identity(&object, source)?;
             }
         }
         "3D" => {
@@ -167,6 +171,39 @@ pub(super) fn read_ann(path: &Path, source: &DicomAnnotationContext) -> Result<A
     };
     document.validate()?;
     Ok(document)
+}
+
+fn validate_volume_identity(
+    object: &InMemDicomObject,
+    source: &DicomAnnotationContext,
+) -> Result<()> {
+    let source_metadata = source.source_metadata()?;
+    source.validate_volume_source_identity(&source_metadata)?;
+    let frame_of_reference_uid = validated_optional_uid(
+        object,
+        tags::FRAME_OF_REFERENCE_UID,
+        "ANN Frame of Reference UID",
+    )?;
+    if frame_of_reference_uid.is_some()
+        && frame_of_reference_uid.as_deref() != source.frame_of_reference_uid()
+    {
+        return Err(Error::InvalidInput(
+            "2D/VOLUME ANN Frame of Reference UID does not match the referenced WSI".into(),
+        ));
+    }
+    let container_identifier = validated_optional_long_string(
+        object,
+        tags::CONTAINER_IDENTIFIER,
+        "ANN Container Identifier",
+    )?;
+    if container_identifier.is_some()
+        && container_identifier.as_deref() != source.container_identifier()
+    {
+        return Err(Error::InvalidInput(
+            "2D/VOLUME ANN Container Identifier does not match the referenced WSI".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn read_group(

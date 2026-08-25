@@ -6,6 +6,8 @@ use dicom_object::InMemDicomObject;
 
 use crate::{Error, Result};
 
+use super::model::{is_valid_dicom_uid, validate_text};
+
 pub(crate) fn sequence(tag: Tag, items: Vec<InMemDicomObject>) -> DataElement<InMemDicomObject> {
     DataElement::new(
         tag,
@@ -105,6 +107,52 @@ pub(crate) fn optional_string(object: &InMemDicomObject, tag: Tag) -> Option<Str
         .and_then(|element| element.to_str().ok())
         .map(|value| value.trim_end_matches('\0').trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+pub(crate) fn validated_optional_uid(
+    object: &InMemDicomObject,
+    tag: Tag,
+    name: &str,
+) -> Result<Option<String>> {
+    let Some(element) = object.get(tag) else {
+        return Ok(None);
+    };
+    if element.vr() != VR::UI {
+        return Err(Error::InvalidInput(format!(
+            "{name} must use the DICOM UI value representation"
+        )));
+    }
+    let value = element
+        .to_str()
+        .map_err(|error| Error::InvalidInput(format!("{name} is not valid text: {error}")))?;
+    let value = value.trim_end_matches('\0').trim();
+    if !is_valid_dicom_uid(value) {
+        return Err(Error::InvalidInput(format!(
+            "{name} is not a valid DICOM UID"
+        )));
+    }
+    Ok(Some(value.to_string()))
+}
+
+pub(crate) fn validated_optional_long_string(
+    object: &InMemDicomObject,
+    tag: Tag,
+    name: &str,
+) -> Result<Option<String>> {
+    let Some(element) = object.get(tag) else {
+        return Ok(None);
+    };
+    if element.vr() != VR::LO {
+        return Err(Error::InvalidInput(format!(
+            "{name} must use the DICOM LO value representation"
+        )));
+    }
+    let value = element
+        .to_str()
+        .map_err(|error| Error::InvalidInput(format!("{name} is not valid text: {error}")))?;
+    let value = value.trim_end_matches('\0').trim();
+    validate_text(name, value, 64)?;
+    Ok(Some(value.to_string()))
 }
 
 pub(crate) fn optional_strings(object: &InMemDicomObject, tag: Tag) -> Vec<String> {
