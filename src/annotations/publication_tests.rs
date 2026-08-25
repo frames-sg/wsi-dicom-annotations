@@ -31,6 +31,22 @@ fn bundle_publication_rechecks_destination_before_rename() {
     assert!(fs::read_dir(destination).unwrap().next().is_none());
 }
 
+#[test]
+fn bundle_publication_publishes_a_synced_staging_directory() {
+    let directory = tempfile::tempdir().unwrap();
+    let destination = directory.path().join("bundle");
+    let publication = DicomBundlePublication::new(&destination, &[]).unwrap();
+    fs::write(publication.staging_path().join("manifest.json"), b"{}").unwrap();
+
+    let published = publication.publish().unwrap();
+
+    assert_eq!(
+        published,
+        directory.path().canonicalize().unwrap().join("bundle")
+    );
+    assert_eq!(fs::read(published.join("manifest.json")).unwrap(), b"{}");
+}
+
 #[cfg(unix)]
 #[test]
 fn publication_rejects_symlinked_parent_escape_and_existing_aliases() {

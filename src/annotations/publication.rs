@@ -162,6 +162,12 @@ impl DicomBundlePublication {
 }
 
 fn sync_path(path: &Path) -> std::result::Result<(), DicomPublicationError> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| DicomPublicationError::io("OUTPUT_SYNC_FAILED", path, error))?;
+    if metadata.is_dir() {
+        #[cfg(not(unix))]
+        return Ok(());
+    }
     fs::File::open(path)
         .and_then(|file| file.sync_all())
         .map_err(|error| DicomPublicationError::io("OUTPUT_SYNC_FAILED", path, error))
