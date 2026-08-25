@@ -36,7 +36,9 @@ fn bundle_publication_publishes_a_synced_staging_directory() {
     let directory = tempfile::tempdir().unwrap();
     let destination = directory.path().join("bundle");
     let publication = DicomBundlePublication::new(&destination, &[]).unwrap();
-    fs::write(publication.staging_path().join("manifest.json"), b"{}").unwrap();
+    let manifest = publication.staging_path().join("manifest.json");
+    fs::write(&manifest, b"{}").unwrap();
+    publication.sync_staged_file(&manifest).unwrap();
 
     let published = publication.publish().unwrap();
 

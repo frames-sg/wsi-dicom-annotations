@@ -1,4 +1,4 @@
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::path::{Component, Path, PathBuf};
 
 use tempfile::TempDir;
@@ -167,8 +167,14 @@ fn sync_path(path: &Path) -> std::result::Result<(), DicomPublicationError> {
     if metadata.is_dir() {
         #[cfg(not(unix))]
         return Ok(());
+        #[cfg(unix)]
+        return fs::File::open(path)
+            .and_then(|file| file.sync_all())
+            .map_err(|error| DicomPublicationError::io("OUTPUT_SYNC_FAILED", path, error));
     }
-    fs::File::open(path)
+    OpenOptions::new()
+        .write(true)
+        .open(path)
         .and_then(|file| file.sync_all())
         .map_err(|error| DicomPublicationError::io("OUTPUT_SYNC_FAILED", path, error))
 }
