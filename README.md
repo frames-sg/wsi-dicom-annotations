@@ -1,5 +1,9 @@
 # wsi-dicom-annotations
 
+This README describes the 0.1.2 development API. The latest crates.io release
+is 0.1.1; the headless CLI and shared metadata-reader API described below are
+available from the 0.1.2 source checkout.
+
 `wsi-dicom-annotations` provides UI-independent Rust models, readers, writers,
 and conversion boundaries for DICOM Whole Slide Microscopy derived objects:
 
