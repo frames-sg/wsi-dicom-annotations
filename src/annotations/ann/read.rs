@@ -44,6 +44,8 @@ pub(super) fn read_ann(path: &Path, source: &DicomAnnotationContext) -> Result<A
     let pixel_origin = optional_string(&object, tags::PIXEL_ORIGIN_INTERPRETATION);
     let mut references_source_image = false;
     let mut referenced_frame_number = None;
+    let mut volume_frame_of_reference_present = false;
+    let mut volume_container_identifier_present = false;
     match coordinate_type.as_str() {
         "2D" => {
             let referenced = sequence_items(&object, tags::REFERENCED_IMAGE_SEQUENCE)?;
@@ -89,7 +91,10 @@ pub(super) fn read_ann(path: &Path, source: &DicomAnnotationContext) -> Result<A
                 }
             }
             if pixel_origin.as_deref() == Some("VOLUME") {
-                validate_volume_identity(&object, source)?;
+                (
+                    volume_frame_of_reference_present,
+                    volume_container_identifier_present,
+                ) = validate_volume_identity(&object, source)?;
             }
         }
         "3D" => {
@@ -143,14 +148,28 @@ pub(super) fn read_ann(path: &Path, source: &DicomAnnotationContext) -> Result<A
             } else {
                 2
             };
-        groups.push(read_group(
+        let group = read_group(
             item,
             coordinate_dimensions,
             editable_coordinates,
             coordinate_type == "3D",
             index,
             &mut diagnostics,
-        )?);
+        )?;
+        for identifier in group.referenced_optical_paths() {
+            if !source.optical_path_identifiers().contains(identifier) {
+                diagnostics.push(InteroperabilityDiagnostic::new(
+                    "UNKNOWN_OPTICAL_PATH_IDENTIFIER",
+                    DiagnosticSeverity::Warning,
+                    format!("AnnotationGroupSequence[{index}].ReferencedOpticalPathIdentifier"),
+                    DiagnosticDisposition::Unsupported,
+                    format!(
+                        "optical path {identifier:?} is not declared by the referenced source WSI"
+                    ),
+                ));
+            }
+        }
+        groups.push(group);
     }
     let document = AnnotationDocument {
         source: source.clone(),
@@ -161,6 +180,8 @@ pub(super) fn read_ann(path: &Path, source: &DicomAnnotationContext) -> Result<A
         pixel_origin_interpretation: pixel_origin,
         references_source_image,
         referenced_frame_number,
+        volume_frame_of_reference_present,
+        volume_container_identifier_present,
         content_label: required_string(&object, tags::CONTENT_LABEL)?,
         content_description: optional_string(&object, tags::CONTENT_DESCRIPTION)
             .unwrap_or_default(),
@@ -176,7 +197,7 @@ pub(super) fn read_ann(path: &Path, source: &DicomAnnotationContext) -> Result<A
 fn validate_volume_identity(
     object: &InMemDicomObject,
     source: &DicomAnnotationContext,
-) -> Result<()> {
+) -> Result<(bool, bool)> {
     let source_metadata = source.source_metadata()?;
     source.validate_volume_source_identity(&source_metadata)?;
     let frame_of_reference_uid = validated_optional_uid(
@@ -203,7 +224,10 @@ fn validate_volume_identity(
             "2D/VOLUME ANN Container Identifier does not match the referenced WSI".into(),
         ));
     }
-    Ok(())
+    Ok((
+        frame_of_reference_uid.is_some(),
+        container_identifier.is_some(),
+    ))
 }
 
 fn read_group(

@@ -83,7 +83,7 @@ fn content_helpers_enforce_single_codes_templates_and_sequences() {
 }
 
 #[test]
-fn document_flags_and_evidence_require_the_exact_research_source() {
+fn document_flags_and_evidence_require_the_exact_source() {
     let (_directory, source) = source_context();
     let mut object = InMemDicomObject::new_empty();
     for (tag, value) in [

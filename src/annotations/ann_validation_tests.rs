@@ -1,5 +1,9 @@
 use std::path::Path;
 
+use dicom_core::{DataElement, VR};
+use dicom_dictionary_std::tags;
+
+use crate::annotations::dicom_dataset::sequence;
 use crate::test_support::write_source_wsi;
 use crate::{AnnotationGroup, DicomAnnotationContext, DicomCode, Point2};
 
@@ -71,4 +75,77 @@ fn valid_checked_document_edit_writes_and_round_trips() {
         imported.groups()[0].point_annotations(),
         Some([Point2::new(8.0, 6.0)].as_slice())
     );
+}
+
+#[test]
+fn new_2d_documents_reject_z_constraints() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("source.dcm");
+    write_source_wsi(&source, 16, 12, 4, 4);
+    let source = DicomAnnotationContext::from_source(&source).unwrap();
+    let group = point_group(1.0, 1.0)
+        .with_common_z_coordinates(vec![0.0])
+        .unwrap();
+
+    let error = AnnotationDocument::new(source, vec![group]).unwrap_err();
+    assert!(error.to_string().contains("2D ANN"));
+    assert!(error.to_string().contains("Z-plane"));
+}
+
+#[test]
+fn new_documents_reject_unknown_optical_paths() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("source.dcm");
+    write_source_wsi(&source, 16, 12, 4, 4);
+    let source = DicomAnnotationContext::from_source(&source).unwrap();
+    let group = point_group(1.0, 1.0)
+        .with_referenced_optical_paths(vec!["UNKNOWN".into()])
+        .unwrap();
+
+    let error = AnnotationDocument::new(source, vec![group]).unwrap_err();
+    assert!(error.to_string().contains("UNKNOWN"));
+    assert!(error.to_string().contains("source WSI"));
+}
+
+#[test]
+fn foreign_ann_with_unknown_optical_path_remains_readable_but_not_rewritable() {
+    let directory = tempfile::tempdir().unwrap();
+    let source_path = directory.path().join("source.dcm");
+    let ann_path = directory.path().join("foreign.dcm");
+    write_source_wsi(&source_path, 16, 12, 4, 4);
+    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let group = point_group(1.0, 1.0)
+        .with_referenced_optical_paths(vec!["OPTICAL-1".into()])
+        .unwrap();
+    AnnotationDocument::new(source.clone(), vec![group])
+        .unwrap()
+        .write_ann(&ann_path)
+        .unwrap();
+    let mut object = dicom_object::open_file(&ann_path).unwrap();
+    let mut groups = object
+        .get(tags::ANNOTATION_GROUP_SEQUENCE)
+        .unwrap()
+        .items()
+        .unwrap()
+        .to_vec();
+    groups[0].put(DataElement::new(
+        tags::REFERENCED_OPTICAL_PATH_IDENTIFIER,
+        VR::SH,
+        "UNKNOWN",
+    ));
+    object.put(sequence(tags::ANNOTATION_GROUP_SEQUENCE, groups));
+    object.write_to_file(&ann_path).unwrap();
+
+    let imported = AnnotationDocument::read_ann(&ann_path, &source).unwrap();
+    assert_eq!(
+        imported.groups()[0].referenced_optical_paths(),
+        &["UNKNOWN"]
+    );
+    assert!(imported
+        .diagnostics()
+        .iter()
+        .any(|diagnostic| diagnostic.code() == "UNKNOWN_OPTICAL_PATH_IDENTIFIER"));
+    assert!(imported
+        .write_ann(directory.path().join("rewrite.dcm"))
+        .is_err());
 }

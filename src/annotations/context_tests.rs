@@ -173,6 +173,39 @@ fn context_uses_shared_pixel_measures_when_top_level_values_are_absent() {
 }
 
 #[test]
+fn context_retains_declared_optical_path_identifiers() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("source.dcm");
+    crate::test_support::write_source_wsi(&source, 16, 12, 4, 4);
+    let mut object = dicom_object::open_file(&source).unwrap();
+    let paths = ["BRIGHTFIELD", "FLUORESCENCE"]
+        .into_iter()
+        .map(|identifier| {
+            let mut item = InMemDicomObject::new_empty();
+            item.put(DataElement::new(
+                tags::OPTICAL_PATH_IDENTIFIER,
+                VR::SH,
+                identifier,
+            ));
+            item
+        })
+        .collect();
+    object.put(sequence(tags::OPTICAL_PATH_SEQUENCE, paths));
+    object.put(DataElement::new(
+        tags::NUMBER_OF_OPTICAL_PATHS,
+        VR::UL,
+        PrimitiveValue::from(2_u32),
+    ));
+    object.write_to_file(&source).unwrap();
+
+    let context = DicomAnnotationContext::from_source(&source).unwrap();
+    assert_eq!(
+        context.optical_path_identifiers(),
+        &["BRIGHTFIELD", "FLUORESCENCE"]
+    );
+}
+
+#[test]
 fn context_attribute_helpers_accept_only_exact_finite_shapes() {
     let mut object = empty_file_object();
     assert!(required_string(&object, tags::SOP_INSTANCE_UID).is_err());

@@ -51,6 +51,33 @@ fn volume_ann_does_not_invent_absent_source_identity() {
 }
 
 #[test]
+fn revised_volume_ann_preserves_absent_input_frame_of_reference_uid() {
+    let directory = tempfile::tempdir().unwrap();
+    let source_path = directory.path().join("source.dcm");
+    let input_path = directory.path().join("input.dcm");
+    let output_path = directory.path().join("output.dcm");
+    write_source_with_container(&source_path, "SOURCE-CONTAINER");
+    write_native_ann(
+        &input_path,
+        "2D",
+        Some("VOLUME"),
+        None,
+        &[(AnnotationGraphicType::Point, vec![1.0, 1.0], vec![], None)],
+    );
+    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+
+    AnnotationDocument::read_ann(&input_path, &source)
+        .unwrap()
+        .revised()
+        .write_ann_with_loss_policy(&output_path, true)
+        .unwrap();
+
+    let output = dicom_object::open_file(&output_path).unwrap();
+    assert!(output.get(tags::FRAME_OF_REFERENCE_UID).is_none());
+    assert!(output.get(tags::CONTAINER_IDENTIFIER).is_none());
+}
+
+#[test]
 fn volume_ann_rejects_malformed_or_changed_source_identity_before_publication() {
     for (name, tag, vr, value) in [
         (

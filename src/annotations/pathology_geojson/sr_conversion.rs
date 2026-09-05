@@ -13,7 +13,7 @@ use crate::annotations::sr::{
 };
 
 impl PathologyAnnotationSet {
-    /// Build a research-only Comprehensive 3D SR measurement report.
+    /// Build a Comprehensive 3D SR measurement report.
     ///
     /// Polygon holes and disconnected polygon components require a companion SEG
     /// from this annotation set. Lines and multipoints are represented only as

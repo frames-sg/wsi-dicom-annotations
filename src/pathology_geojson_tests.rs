@@ -36,12 +36,33 @@ const MAPPING: &str = r#"
 }
 "#;
 
-#[test]
-fn pathology_preview_preserves_mixed_geometry_holes_identity_and_display_semantics() {
+fn source_fixture() -> (tempfile::TempDir, DicomAnnotationContext) {
     let directory = tempfile::tempdir().unwrap();
     let source_path = directory.path().join("source.dcm");
     write_source_wsi(&source_path, 16, 12, 4, 4);
     let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    (directory, source)
+}
+
+fn parse_fixture(
+    geojson: &[u8],
+    mapping: &[u8],
+    source: &DicomAnnotationContext,
+    allow_unmapped_properties: bool,
+) -> crate::Result<PathologyAnnotationSet> {
+    PathologyAnnotationSet::from_json(
+        geojson,
+        mapping,
+        source,
+        source,
+        PathologyCoordinateSpace::Level0Pixels,
+        allow_unmapped_properties,
+    )
+}
+
+#[test]
+fn pathology_preview_preserves_mixed_geometry_holes_identity_and_display_semantics() {
+    let (_directory, source) = source_fixture();
     let geojson = br#"
     {
       "type":"FeatureCollection",
@@ -70,15 +91,7 @@ fn pathology_preview_preserves_mixed_geometry_holes_identity_and_display_semanti
       ]
     }
     "#;
-    let annotations = PathologyAnnotationSet::from_json(
-        geojson,
-        MAPPING.as_bytes(),
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap();
+    let annotations = parse_fixture(geojson, MAPPING.as_bytes(), &source, false).unwrap();
 
     let preview = annotations.into_preview();
 
@@ -106,10 +119,7 @@ fn pathology_preview_preserves_mixed_geometry_holes_identity_and_display_semanti
 
 #[test]
 fn viewer_geojson_profile_normalizes_alias_closure_winding_and_uuid() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let geojson = br#"
     {
       "type": "FeatureCollection",
@@ -130,15 +140,7 @@ fn viewer_geojson_profile_normalizes_alias_closure_winding_and_uuid() {
     }
     "#;
 
-    let annotations = PathologyAnnotationSet::from_json(
-        geojson,
-        MAPPING.as_bytes(),
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap();
+    let annotations = parse_fixture(geojson, MAPPING.as_bytes(), &source, false).unwrap();
 
     assert_eq!(annotations.feature_count(), 1);
     assert_eq!(
@@ -169,10 +171,7 @@ fn viewer_geojson_profile_normalizes_alias_closure_winding_and_uuid() {
 
 #[test]
 fn geojson_profile_rejects_conflicting_aliases_and_unmapped_properties() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let conflicting = br#"
     {
       "type": "FeatureCollection",
@@ -187,15 +186,7 @@ fn geojson_profile_rejects_conflicting_aliases_and_unmapped_properties() {
       }]
     }
     "#;
-    let error = PathologyAnnotationSet::from_json(
-        conflicting,
-        MAPPING.as_bytes(),
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap_err();
+    let error = parse_fixture(conflicting, MAPPING.as_bytes(), &source, false).unwrap_err();
     assert!(error
         .to_string()
         .contains("objectType and object_type disagree"));
@@ -213,24 +204,13 @@ fn geojson_profile_rejects_conflicting_aliases_and_unmapped_properties() {
       }]
     }
     "#;
-    let error = PathologyAnnotationSet::from_json(
-        unknown_property,
-        MAPPING.as_bytes(),
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap_err();
+    let error = parse_fixture(unknown_property, MAPPING.as_bytes(), &source, false).unwrap_err();
     assert!(error.to_string().contains("unmapped property confidence"));
 }
 
 #[test]
 fn geojson_profile_rejects_duplicate_semantic_property_sources() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let geojson = br#"
     {
       "type": "FeatureCollection",
@@ -246,15 +226,7 @@ fn geojson_profile_rejects_duplicate_semantic_property_sources() {
     }
     "#;
 
-    let error = PathologyAnnotationSet::from_json(
-        geojson,
-        MAPPING.as_bytes(),
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        true,
-    )
-    .unwrap_err();
+    let error = parse_fixture(geojson, MAPPING.as_bytes(), &source, true).unwrap_err();
 
     assert!(error
         .to_string()
@@ -263,10 +235,7 @@ fn geojson_profile_rejects_duplicate_semantic_property_sources() {
 
 #[test]
 fn geojson_profile_rejects_duplicate_json_object_keys() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let geojson = br#"
     {
       "type": "FeatureCollection",
@@ -281,15 +250,7 @@ fn geojson_profile_rejects_duplicate_json_object_keys() {
     }
     "#;
 
-    let error = PathologyAnnotationSet::from_json(
-        geojson,
-        MAPPING.as_bytes(),
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        true,
-    )
-    .unwrap_err();
+    let error = parse_fixture(geojson, MAPPING.as_bytes(), &source, true).unwrap_err();
 
     assert!(error
         .to_string()
@@ -298,10 +259,7 @@ fn geojson_profile_rejects_duplicate_json_object_keys() {
 
 #[test]
 fn geojson_profile_rejects_invalid_polygon_hole_topology() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let invalid_holes = [
         "[[[1,1],[10,1],[10,10],[1,10],[1,1]],[[11,2],[13,2],[13,4],[11,4],[11,2]]]",
         "[[[1,1],[10,1],[10,10],[1,10],[1,1]],[[8,3],[12,3],[12,5],[8,5],[8,3]]]",
@@ -319,15 +277,8 @@ fn geojson_profile_rejects_invalid_polygon_hole_topology() {
               }}]
             }}"#
         );
-        let error = PathologyAnnotationSet::from_json(
-            geojson.as_bytes(),
-            MAPPING.as_bytes(),
-            &source,
-            &source,
-            PathologyCoordinateSpace::Level0Pixels,
-            false,
-        )
-        .unwrap_err();
+        let error =
+            parse_fixture(geojson.as_bytes(), MAPPING.as_bytes(), &source, false).unwrap_err();
 
         assert!(error.to_string().contains("invalid polygon hole topology"));
     }
@@ -335,10 +286,7 @@ fn geojson_profile_rejects_invalid_polygon_hole_topology() {
 
 #[test]
 fn geojson_profile_rejects_unclosed_polygon_rings() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let geojson = br#"
     {
       "type":"FeatureCollection",
@@ -350,25 +298,14 @@ fn geojson_profile_rejects_unclosed_polygon_rings() {
     }
     "#;
 
-    let error = PathologyAnnotationSet::from_json(
-        geojson,
-        MAPPING.as_bytes(),
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap_err();
+    let error = parse_fixture(geojson, MAPPING.as_bytes(), &source, false).unwrap_err();
 
     assert!(error.to_string().contains("must repeat its first position"));
 }
 
 #[test]
 fn geojson_profile_rejects_overlapping_multipolygon_components() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let geojson = br#"
     {
       "type":"FeatureCollection",
@@ -383,15 +320,7 @@ fn geojson_profile_rejects_overlapping_multipolygon_components() {
     }
     "#;
 
-    let error = PathologyAnnotationSet::from_json(
-        geojson,
-        MAPPING.as_bytes(),
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap_err();
+    let error = parse_fixture(geojson, MAPPING.as_bytes(), &source, false).unwrap_err();
 
     assert!(error
         .to_string()
@@ -400,10 +329,7 @@ fn geojson_profile_rejects_overlapping_multipolygon_components() {
 
 #[test]
 fn ann_conversion_preserves_feature_groups_and_all_supported_graphics() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let geojson = br#"
     {
       "type": "FeatureCollection",
@@ -417,15 +343,7 @@ fn ann_conversion_preserves_feature_groups_and_all_supported_graphics() {
       ]
     }
     "#;
-    let annotations = PathologyAnnotationSet::from_json(
-        geojson,
-        MAPPING.as_bytes(),
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap();
+    let annotations = parse_fixture(geojson, MAPPING.as_bytes(), &source, false).unwrap();
 
     let ann = annotations.to_ann().unwrap();
 
@@ -457,10 +375,7 @@ fn ann_conversion_preserves_feature_groups_and_all_supported_graphics() {
 
 #[test]
 fn ann_conversion_rejects_polygon_holes_before_output() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let geojson = br#"
     {
       "type": "FeatureCollection",
@@ -475,15 +390,7 @@ fn ann_conversion_rejects_polygon_holes_before_output() {
       }]
     }
     "#;
-    let annotations = PathologyAnnotationSet::from_json(
-        geojson,
-        MAPPING.as_bytes(),
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap();
+    let annotations = parse_fixture(geojson, MAPPING.as_bytes(), &source, false).unwrap();
 
     let error = annotations.to_ann().unwrap_err();
 
@@ -494,10 +401,7 @@ fn ann_conversion_rejects_polygon_holes_before_output() {
 
 #[test]
 fn ann_and_sr_compose_for_multipoint_feature_measurements() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let mapping = mapping_with_sr();
     let geojson = br#"
     {
@@ -513,15 +417,7 @@ fn ann_and_sr_compose_for_multipoint_feature_measurements() {
       }]
     }
     "#;
-    let annotations = PathologyAnnotationSet::from_json(
-        geojson,
-        &mapping,
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap();
+    let annotations = parse_fixture(geojson, &mapping, &source, false).unwrap();
 
     assert!(annotations.to_ann().is_err());
     let ann = annotations.to_ann_with_companion_sr().unwrap();
@@ -537,10 +433,7 @@ fn ann_and_sr_compose_for_multipoint_feature_measurements() {
 
 #[test]
 fn seg_conversion_preserves_holes_components_overlap_and_tracking() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let geojson = br#"
     {
       "type": "FeatureCollection",
@@ -563,15 +456,7 @@ fn seg_conversion_preserves_holes_components_overlap_and_tracking() {
       ]
     }
     "#;
-    let annotations = PathologyAnnotationSet::from_json(
-        geojson,
-        MAPPING.as_bytes(),
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap();
+    let annotations = parse_fixture(geojson, MAPPING.as_bytes(), &source, false).unwrap();
 
     let seg = annotations.to_seg(false).unwrap();
     let runs = seg.binary_runs().unwrap();
@@ -639,10 +524,7 @@ fn seg_conversion_transforms_level_zero_geometry_to_a_lower_pyramid_source() {
 
 #[test]
 fn multipolygon_component_can_fill_another_components_hole() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let geojson = br#"
     {
       "type": "FeatureCollection",
@@ -657,15 +539,7 @@ fn multipolygon_component_can_fill_another_components_hole() {
       }]
     }
     "#;
-    let annotations = PathologyAnnotationSet::from_json(
-        geojson,
-        MAPPING.as_bytes(),
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap();
+    let annotations = parse_fixture(geojson, MAPPING.as_bytes(), &source, false).unwrap();
 
     let runs = annotations.to_seg(false).unwrap().binary_runs().unwrap();
 
@@ -675,10 +549,7 @@ fn multipolygon_component_can_fill_another_components_hole() {
 
 #[test]
 fn seg_conversion_rejects_non_area_geometry() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let geojson = br#"
     {
       "type": "FeatureCollection",
@@ -690,15 +561,7 @@ fn seg_conversion_rejects_non_area_geometry() {
       }]
     }
     "#;
-    let annotations = PathologyAnnotationSet::from_json(
-        geojson,
-        MAPPING.as_bytes(),
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap();
+    let annotations = parse_fixture(geojson, MAPPING.as_bytes(), &source, false).unwrap();
 
     let error = annotations.to_seg(false).unwrap_err();
 
@@ -723,11 +586,8 @@ fn mask_contains(
 
 #[test]
 fn sr_direct_roi_roundtrips_tracking_measurements_evaluations_and_status() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
+    let (directory, source) = source_fixture();
     let sr_path = directory.path().join("report.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
     let mapping = mapping_with_sr();
     let geojson = br#"
     {
@@ -744,15 +604,7 @@ fn sr_direct_roi_roundtrips_tracking_measurements_evaluations_and_status() {
       }]
     }
     "#;
-    let annotations = PathologyAnnotationSet::from_json(
-        geojson,
-        &mapping,
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap();
+    let annotations = parse_fixture(geojson, &mapping, &source, false).unwrap();
 
     assert!(annotations.to_ann().is_err());
     assert_eq!(
@@ -816,10 +668,7 @@ fn sr_direct_roi_roundtrips_tracking_measurements_evaluations_and_status() {
 
 #[test]
 fn sr_uses_seg_reference_for_holes_with_matching_tracking() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let mapping = mapping_with_sr();
     let geojson = br#"
     {
@@ -835,15 +684,7 @@ fn sr_uses_seg_reference_for_holes_with_matching_tracking() {
       }]
     }
     "#;
-    let annotations = PathologyAnnotationSet::from_json(
-        geojson,
-        &mapping,
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap();
+    let annotations = parse_fixture(geojson, &mapping, &source, false).unwrap();
     let seg = annotations.to_seg(true).unwrap();
 
     let sr = annotations.to_sr(Some(&seg)).unwrap();
@@ -870,12 +711,9 @@ fn sr_uses_seg_reference_for_holes_with_matching_tracking() {
 
 #[test]
 fn shared_pathology_documents_build_and_verify_a_seg_referenced_sr_bundle() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
+    let (directory, source) = source_fixture();
     let seg_path = directory.path().join("seg.dcm");
     let sr_path = directory.path().join("sr.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
     let mapping = mapping_with_sr();
     let geojson = br#"
     {
@@ -891,15 +729,7 @@ fn shared_pathology_documents_build_and_verify_a_seg_referenced_sr_bundle() {
       }]
     }
     "#;
-    let annotations = PathologyAnnotationSet::from_json(
-        geojson,
-        &mapping,
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap();
+    let annotations = parse_fixture(geojson, &mapping, &source, false).unwrap();
 
     let producer = |series_number, description| {
         DerivedObjectProducer::new(
@@ -964,10 +794,7 @@ fn shared_pathology_documents_build_and_verify_a_seg_referenced_sr_bundle() {
 
 #[test]
 fn pathology_semantic_digest_includes_sr_report_context() {
-    let directory = tempfile::tempdir().unwrap();
-    let source_path = directory.path().join("source.dcm");
-    write_source_wsi(&source_path, 16, 12, 4, 4);
-    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let (_directory, source) = source_fixture();
     let geojson = br#"
     {
       "type":"FeatureCollection",
@@ -983,21 +810,11 @@ fn pathology_semantic_digest_includes_sr_report_context() {
     let mut second_mapping: serde_json::Value = serde_json::from_slice(&first_mapping).unwrap();
     second_mapping["sr"]["report_title"]["code_meaning"] =
         serde_json::json!("Pathology Measurement Report");
-    let first = PathologyAnnotationSet::from_json(
-        geojson,
-        &first_mapping,
-        &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
-        false,
-    )
-    .unwrap();
-    let second = PathologyAnnotationSet::from_json(
+    let first = parse_fixture(geojson, &first_mapping, &source, false).unwrap();
+    let second = parse_fixture(
         geojson,
         &serde_json::to_vec(&second_mapping).unwrap(),
         &source,
-        &source,
-        PathologyCoordinateSpace::Level0Pixels,
         false,
     )
     .unwrap();

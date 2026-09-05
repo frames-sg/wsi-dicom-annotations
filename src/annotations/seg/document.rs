@@ -1,22 +1,21 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::path::Path;
 
 use dicom_dictionary_std::{tags, uids};
 use sha2::{Digest, Sha256};
 
-use super::raster::{
-    merge_binary_runs, merge_fractional_runs, rasterize_segments, scan_nonzero_ranges, RunBudget,
-};
+use super::conversion;
+use super::raster::rasterize_segments;
 use super::read::{
     read_binary_frames, read_fractional_frames, read_labelmap_frames, read_segments,
     validate_source_reference,
 };
+use super::runs;
 use super::write::add_segmentation_attributes;
 use super::{
     BinaryMaskRun, BinarySegmentationFrame, FractionalMaskRun, FractionalSegmentationFrame,
     SegToAnnConversionPolicy, SegmentationDocument, SegmentationKind, SegmentationSegment,
-    VectorizedAnnotations, MAX_SEG_FILE_BYTES, MAX_VECTORIZED_RUNS,
+    VectorizedAnnotations, MAX_SEG_FILE_BYTES,
 };
 use crate::annotations::context::DicomAnnotationContext;
 use crate::annotations::derived_object::{
@@ -26,9 +25,7 @@ use crate::annotations::dicom_dataset::{new_dicom_uid, optional_string, required
 use crate::annotations::dicom_file::{
     atomic_write_dicom, enforce_file_limit, ensure_sidecar_destination,
 };
-use crate::annotations::model::{
-    AnnotationGroup, DiagnosticDisposition, DiagnosticSeverity, InteroperabilityDiagnostic, Point2,
-};
+use crate::annotations::model::InteroperabilityDiagnostic;
 use crate::{Error, Result};
 
 impl SegmentationDocument {
@@ -155,7 +152,7 @@ impl SegmentationDocument {
         Ok(self.binary_frames()?.into_owned())
     }
 
-    fn binary_frames(&self) -> Result<Cow<'_, [BinarySegmentationFrame]>> {
+    pub(super) fn binary_frames(&self) -> Result<Cow<'_, [BinarySegmentationFrame]>> {
         if let Some(frames) = &self.imported_binary_frames {
             return Ok(Cow::Borrowed(frames));
         }
@@ -172,108 +169,11 @@ impl SegmentationDocument {
     }
 
     pub fn binary_runs(&self) -> Result<Vec<BinaryMaskRun>> {
-        if self.kind == SegmentationKind::Fractional {
-            return Err(Error::Unsupported(
-                "fractional SEG does not contain binary mask runs".into(),
-            ));
-        }
-        let frames = self.binary_frames()?;
-        let mut runs = Vec::new();
-        let mut budget = RunBudget::new(MAX_VECTORIZED_RUNS);
-        for frame in frames.iter() {
-            let base_column = frame
-                .tile_col
-                .checked_mul(u32::from(frame.width))
-                .ok_or_else(|| Error::InvalidInput("SEG column position overflows".into()))?;
-            let base_row = frame
-                .tile_row
-                .checked_mul(u32::from(frame.height))
-                .ok_or_else(|| Error::InvalidInput("SEG row position overflows".into()))?;
-            for row in 0..usize::from(frame.height) {
-                let row_start = row * usize::from(frame.width);
-                let values = &frame.mask[row_start..row_start + usize::from(frame.width)];
-                let row = u32::try_from(row)
-                    .map_err(|_| Error::InvalidInput("SEG row index exceeds DICOM range".into()))?;
-                let absolute_row = base_row
-                    .checked_add(row)
-                    .ok_or_else(|| Error::InvalidInput("SEG row position overflows".into()))?;
-                scan_nonzero_ranges(
-                    values,
-                    |value| *value,
-                    &mut budget,
-                    |range| {
-                        let start = u32::try_from(range.start).map_err(|_| {
-                            Error::InvalidInput("SEG column index exceeds DICOM range".into())
-                        })?;
-                        let length = u32::try_from(range.len()).map_err(|_| {
-                            Error::InvalidInput("SEG run length exceeds DICOM range".into())
-                        })?;
-                        let column_start = base_column.checked_add(start).ok_or_else(|| {
-                            Error::InvalidInput("SEG column position overflows".into())
-                        })?;
-                        runs.push(BinaryMaskRun {
-                            segment_number: frame.segment_number,
-                            row: absolute_row,
-                            column_start,
-                            length,
-                        });
-                        Ok(())
-                    },
-                )?;
-            }
-        }
-        runs.sort_by_key(|run| (run.segment_number, run.row, run.column_start));
-        merge_binary_runs(runs)
+        runs::binary_runs(self)
     }
 
     pub fn fractional_runs(&self) -> Result<Vec<FractionalMaskRun>> {
-        let frames = self.fractional_frames().ok_or_else(|| {
-            Error::Unsupported("SEG does not contain fractional mask values".into())
-        })?;
-        let mut runs = Vec::new();
-        let mut budget = RunBudget::new(MAX_VECTORIZED_RUNS);
-        for frame in frames {
-            let base_column = frame
-                .tile_col
-                .checked_mul(u32::from(frame.width))
-                .ok_or_else(|| Error::InvalidInput("SEG column position overflows".into()))?;
-            let base_row = frame
-                .tile_row
-                .checked_mul(u32::from(frame.height))
-                .ok_or_else(|| Error::InvalidInput("SEG row position overflows".into()))?;
-            for row in 0..usize::from(frame.height) {
-                let row_start = row * usize::from(frame.width);
-                let values = &frame.values[row_start..row_start + usize::from(frame.width)];
-                let row_u32 = u32::try_from(row)
-                    .map_err(|_| Error::InvalidInput("SEG row index exceeds DICOM range".into()))?;
-                let absolute_row = base_row
-                    .checked_add(row_u32)
-                    .ok_or_else(|| Error::InvalidInput("SEG row position overflows".into()))?;
-                scan_nonzero_ranges(
-                    values,
-                    |value| *value != 0,
-                    &mut budget,
-                    |range| {
-                        let start_u32 = u32::try_from(range.start).map_err(|_| {
-                            Error::InvalidInput("SEG column index exceeds DICOM range".into())
-                        })?;
-                        let column_start = base_column.checked_add(start_u32).ok_or_else(|| {
-                            Error::InvalidInput("SEG column position overflows".into())
-                        })?;
-                        runs.push(FractionalMaskRun {
-                            segment_number: frame.segment_number,
-                            row: absolute_row,
-                            column_start,
-                            maximum_fractional_value: frame.maximum_fractional_value,
-                            values: values[range].to_vec(),
-                        });
-                        Ok(())
-                    },
-                )?;
-            }
-        }
-        runs.sort_by_key(|run| (run.segment_number, run.row, run.column_start));
-        merge_fractional_runs(runs)
+        runs::fractional_runs(self)
     }
 
     pub fn mask_digest(&self) -> Result<String> {
@@ -391,126 +291,7 @@ impl SegmentationDocument {
         &self,
         policy: SegToAnnConversionPolicy,
     ) -> Result<VectorizedAnnotations> {
-        if self.kind == SegmentationKind::Fractional {
-            return Err(Error::Unsupported(
-                "fractional SEG remains a read-only raster overlay".into(),
-            ));
-        }
-        let segment_indices = self.segment_indices_by_number()?;
-        let runs = self.binary_runs()?;
-        let mut polygon_counts = vec![0_usize; self.segments.len()];
-        for run in &runs {
-            let segment_index = segment_indices.get(&run.segment_number).ok_or_else(|| {
-                Error::InvalidInput(format!(
-                    "SEG run references missing segment {}",
-                    run.segment_number
-                ))
-            })?;
-            polygon_counts[*segment_index] = polygon_counts[*segment_index]
-                .checked_add(1)
-                .ok_or_else(|| Error::InvalidInput("SEG polygon count overflows".into()))?;
-        }
-        let mut polygons_by_segment = polygon_counts
-            .into_iter()
-            .map(Vec::with_capacity)
-            .collect::<Vec<_>>();
-        for run in runs {
-            let segment_index = segment_indices[&run.segment_number];
-            let x0 = f64::from(run.column_start);
-            let x1 = f64::from(
-                run.column_start
-                    .checked_add(run.length)
-                    .ok_or_else(|| Error::InvalidInput("SEG run end overflows".into()))?,
-            );
-            let y0 = f64::from(run.row);
-            let y1 = y0 + 1.0;
-            polygons_by_segment[segment_index].push(vec![
-                Point2::new(x0, y0),
-                Point2::new(x1, y0),
-                Point2::new(x1, y1),
-                Point2::new(x0, y1),
-            ]);
-        }
-        let mut diagnostics = self.diagnostics.clone();
-        diagnostics.push(InteroperabilityDiagnostic::normalized(
-            "SEG_RASTER_VECTORIZED",
-            "$.PixelData",
-            "projected the exact SEG raster into canonical pixel-edge ANN rectangles",
-        ));
-        let mut groups = Vec::with_capacity(self.segments.len());
-        let mut group_uids = std::collections::BTreeSet::new();
-        for (index, (segment, polygons)) in
-            self.segments.iter().zip(polygons_by_segment).enumerate()
-        {
-            let path = format!("SegmentSequence[{index}]");
-            if polygons.is_empty() {
-                diagnostics.push(InteroperabilityDiagnostic::new(
-                    "EMPTY_SEGMENT_NOT_VECTORIZED",
-                    DiagnosticSeverity::Warning,
-                    path,
-                    DiagnosticDisposition::WouldDrop,
-                    "segment has no nonzero pixels and cannot produce a nonempty ANN group",
-                ));
-                continue;
-            }
-            let mut group = AnnotationGroup::polygons(
-                segment.label(),
-                segment.category().clone(),
-                segment.property_type().clone(),
-                segment.recommended_display_cielab(),
-                polygons,
-            )?
-            .with_description(segment.description())?
-            .with_finding_semantics(segment.finding.clone())?;
-            if let Some(number) = segment.source_segment_number() {
-                diagnostics.push(InteroperabilityDiagnostic::new(
-                    "SEGMENT_NUMBER_NOT_REPRESENTABLE",
-                    DiagnosticSeverity::Warning,
-                    format!("{path}.SegmentNumber"),
-                    DiagnosticDisposition::WouldDrop,
-                    format!("source Segment Number {number} has no ANN equivalent"),
-                ));
-            }
-            if segment.tracking_id().is_some() {
-                diagnostics.push(InteroperabilityDiagnostic::new(
-                    "SEG_TRACKING_ID_NOT_REPRESENTABLE",
-                    DiagnosticSeverity::Warning,
-                    format!("{path}.TrackingID"),
-                    DiagnosticDisposition::WouldDrop,
-                    "SEG Tracking ID has no ANN group attribute; Tracking UID is reused as the Annotation Group UID when valid",
-                ));
-            }
-            if let Some(tracking_uid) = segment.tracking_uid() {
-                match group.clone().with_uid(tracking_uid) {
-                    Ok(tracked) if group_uids.insert(tracking_uid.to_string()) => group = tracked,
-                    _ => diagnostics.push(InteroperabilityDiagnostic::new(
-                        "SEG_TRACKING_UID_NOT_REUSABLE",
-                        DiagnosticSeverity::Warning,
-                        format!("{path}.TrackingUID"),
-                        DiagnosticDisposition::WouldDrop,
-                        "SEG Tracking UID is invalid or duplicated and cannot become the ANN Annotation Group UID",
-                    )),
-                }
-            } else {
-                group_uids.insert(group.uid().to_string());
-            }
-            groups.push(group);
-        }
-        let blocking = diagnostics
-            .iter()
-            .filter(|diagnostic| diagnostic.blocks_roundtrip())
-            .map(InteroperabilityDiagnostic::code)
-            .collect::<Vec<_>>();
-        if policy == SegToAnnConversionPolicy::RejectLoss && !blocking.is_empty() {
-            return Err(Error::Unsupported(format!(
-                "SEG-to-ANN projection would lose semantics ({}); use SegToAnnConversionPolicy::AllowLoss to receive groups with diagnostics",
-                blocking.join(", ")
-            )));
-        }
-        Ok(VectorizedAnnotations {
-            groups,
-            diagnostics,
-        })
+        conversion::vectorized_annotations(self, policy)
     }
 
     #[must_use]
@@ -579,21 +360,5 @@ impl SegmentationDocument {
                     .unwrap_or_else(|| u16::try_from(index + 1).unwrap_or(u16::MAX))
                     == number
             })
-    }
-
-    fn segment_indices_by_number(&self) -> Result<HashMap<u16, usize>> {
-        let mut indices = HashMap::with_capacity(self.segments.len());
-        for (index, segment) in self.segments.iter().enumerate() {
-            let number = segment.source_segment_number.unwrap_or(
-                u16::try_from(index + 1)
-                    .map_err(|_| Error::InvalidInput("segment number exceeds US range".into()))?,
-            );
-            if indices.insert(number, index).is_some() {
-                return Err(Error::InvalidInput(format!(
-                    "SEG contains duplicate segment number {number}"
-                )));
-            }
-        }
-        Ok(indices)
     }
 }

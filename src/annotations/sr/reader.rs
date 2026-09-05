@@ -109,7 +109,7 @@ fn validate_document_flags(object: &InMemDicomObject) -> Result<()> {
         let actual = required_string(object, tag)?;
         if actual != expected {
             return Err(Error::InvalidInput(format!(
-                "SR {name} is {actual:?}; expected {expected:?} for research conversion output"
+                "SR {name} is {actual:?}; expected {expected:?} for generated conversion output"
             )));
         }
     }

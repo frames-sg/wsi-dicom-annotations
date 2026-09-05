@@ -5,7 +5,7 @@ use std::error::Error as StdError;
 use std::path::PathBuf;
 
 mod annotations;
-mod metadata;
+pub mod metadata;
 
 #[cfg(test)]
 mod annotation_tests;

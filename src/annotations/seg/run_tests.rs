@@ -1,4 +1,4 @@
-use super::raster::{scan_nonzero_ranges, RunBudget};
+use super::runs::{scan_nonzero_ranges, RunBudget};
 use super::*;
 
 #[test]
@@ -96,4 +96,26 @@ fn run_extraction_rejects_tile_offset_overflow() {
         .unwrap_err()
         .to_string()
         .contains("overflows"));
+}
+
+#[test]
+fn shared_frame_traversal_rejects_mismatched_payload_lengths() {
+    let (mut binary, mut fractional) = super::performance_tests::benchmark_documents();
+    binary.imported_binary_frames.as_mut().unwrap()[0]
+        .mask
+        .pop();
+    fractional.imported_fractional_frames.as_mut().unwrap()[0]
+        .values
+        .pop();
+
+    assert!(binary
+        .binary_runs()
+        .unwrap_err()
+        .to_string()
+        .contains("samples"));
+    assert!(fractional
+        .fractional_runs()
+        .unwrap_err()
+        .to_string()
+        .contains("samples"));
 }

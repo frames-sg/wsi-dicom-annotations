@@ -1,3 +1,8 @@
+//! Bounded, pixel-free DICOM metadata loading shared by derived-object readers and viewers.
+//!
+//! The reader preflights file meta and data-set structure on the same file handle used
+//! for parsing. Limits apply before materializing values; pixel data is never loaded.
+
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
@@ -12,13 +17,27 @@ use crate::{Error, Result};
 
 const MAX_FILE_META_BYTES: u32 = 1024 * 1024;
 const MAX_FILE_META_ELEMENTS: usize = 128;
-const MAX_METADATA_ELEMENT_BYTES: u32 = 16 * 1024 * 1024;
-const MAX_METADATA_VALUE_BYTES: u64 = 128 * 1024 * 1024;
+/// Largest encoded metadata value accepted before pixel data.
+pub const MAX_METADATA_ELEMENT_BYTES: u32 = 16 * 1024 * 1024;
+/// Maximum cumulative encoded metadata value bytes before pixel data.
+pub const MAX_METADATA_VALUE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_METADATA_TOKENS: usize = 2_000_000;
-const MAX_METADATA_SEQUENCE_DEPTH: usize = 64;
+/// Maximum sequence nesting accepted before pixel data.
+pub const MAX_METADATA_SEQUENCE_DEPTH: usize = 64;
 const MAX_TRANSFER_SYNTAX_UID_BYTES: u32 = 128;
 
-pub(crate) fn open_metadata_object(path: &Path) -> Result<DefaultDicomObject> {
+/// Read a DICOM Part 10 object up to (but excluding) pixel data.
+///
+/// Requires a file preamble and a supported transfer syntax. File meta is limited
+/// to 1 MiB and 128 elements, individual metadata values to 16 MiB, cumulative
+/// values to 128 MiB, tokens to two million, and sequence nesting to 64 levels.
+/// These are admission limits for encoded metadata, not a total heap bound.
+///
+/// # Errors
+/// Returns [`Error::Io`] for filesystem failures, [`Error::InvalidInput`] for
+/// rejected structure or limits, and [`Error::DicomRead`] for parser failures.
+/// Errors identify the source path. Callers must not modify the file during reading.
+pub fn open_metadata_object(path: &Path) -> Result<DefaultDicomObject> {
     let mut file = std::fs::File::open(path).map_err(|source| Error::Io {
         path: path.to_path_buf(),
         source,
@@ -324,3 +343,6 @@ fn invalid_metadata(path: &Path, reason: impl std::fmt::Display) -> Error {
         path.display()
     ))
 }
+
+#[cfg(test)]
+mod tests;
