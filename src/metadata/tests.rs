@@ -99,3 +99,45 @@ fn pixel_boundaries_and_diagnostic_context_are_stable() {
         .to_string()
         .contains("reason"));
 }
+
+#[test]
+fn metadata_admission_batches_small_reads_without_consuming_pixel_payload() {
+    struct CountedReader {
+        data: std::io::Cursor<Vec<u8>>,
+        reads: usize,
+    }
+    impl Read for CountedReader {
+        fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+            self.reads += 1;
+            self.data.read(bytes)
+        }
+    }
+    impl Seek for CountedReader {
+        fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+            self.data.seek(position)
+        }
+    }
+
+    let mut data = Vec::new();
+    for element in 0..2_048_u16 {
+        data.extend_from_slice(&0x7777_u16.to_le_bytes());
+        data.extend_from_slice(&element.to_le_bytes());
+        data.extend_from_slice(b"US\x02\0\x01\0");
+    }
+    let metadata_bytes = data.len();
+    data.extend_from_slice(b"\xe0\x7f\x10\0OB\0\0\0\0\x10\0");
+    data.resize(data.len() + 1024 * 1024, 0xff);
+    let mut source = CountedReader {
+        data: std::io::Cursor::new(data),
+        reads: 0,
+    };
+    let syntax = TransferSyntaxRegistry.get("1.2.840.10008.1.2.1").unwrap();
+    preflight_data_set(&mut source, Path::new("metadata.dcm"), syntax).unwrap();
+    // Permit bounded read-ahead, but never read the large pixel payload.
+    assert!(source.data.position() <= (metadata_bytes + 8192) as u64);
+    assert!(
+        source.reads <= 4,
+        "metadata admission issued {} underlying reads",
+        source.reads
+    );
+}
