@@ -5,6 +5,7 @@ use super::algorithm::{AlgorithmIdentification, GenerationType};
 use super::code::{is_valid_dicom_uid, validate_text, DicomCode, MAX_LONG_TEXT_BYTES};
 use super::finding::FindingSemantics;
 use super::geometry::{validate_points, validate_polygon, AnnotationGeometry, Point2};
+use crate::annotations::semantic_digest::deterministic_annotation_group_uid;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnnotationMeasurement {
@@ -193,6 +194,22 @@ impl AnnotationGroup {
             ));
         }
         self.uid = uid;
+        Ok(self)
+    }
+
+    /// Derives a stable DICOM Annotation Group UID from caller identity and group semantics.
+    ///
+    /// Geometry, measurements, and the group's current UID are deliberately excluded so that
+    /// moving or remeasuring one logical group does not change its identity. Changing its label,
+    /// coded finding, generation metadata, display color, or applicability does change the UID.
+    pub fn with_deterministic_uid(
+        mut self,
+        namespace: &str,
+        scope: &str,
+        application_key: &str,
+    ) -> Result<Self> {
+        self.uid = deterministic_annotation_group_uid(&self, namespace, scope, application_key);
+        self.validate()?;
         Ok(self)
     }
 

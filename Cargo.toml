@@ -1,12 +1,17 @@
+[workspace]
+resolver = "2"
+members = [".", "apps/annotation-probe"]
+
 [package]
 name = "wsi-dicom-annotations"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 rust-version = "1.96"
 license = "MIT OR Apache-2.0"
 description = "DICOM WSI ANN, SEG, SR, and Parametric Map interoperability"
 repository = "https://github.com/frames-sg/wsi-dicom-annotations"
 readme = "README.md"
+exclude = ["apps/"]
 keywords = ["dicom", "whole-slide", "pathology", "annotations"]
 categories = ["science"]
 

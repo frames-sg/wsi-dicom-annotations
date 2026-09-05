@@ -179,6 +179,14 @@ fn float32_parametric_map_streams_required_metadata_and_exact_pixels() {
     );
     assert_eq!(
         object
+            .element(tags::CONTENT_QUALIFICATION)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "SERVICE"
+    );
+    assert_eq!(
+        object
             .element(tags::DIMENSION_ORGANIZATION_TYPE)
             .unwrap()
             .to_str()

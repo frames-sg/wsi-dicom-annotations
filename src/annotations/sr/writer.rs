@@ -61,7 +61,7 @@ pub(super) fn write_sr(document: &StructuredReportDocument, path: &Path) -> Resu
     ] {
         put_text(&mut object, tag, vr, value);
     }
-    put_text(&mut object, tags::CONTENT_QUALIFICATION, VR::CS, "RESEARCH");
+    put_text(&mut object, tags::CONTENT_QUALIFICATION, VR::CS, "SERVICE");
     object.put(sequence(
         tags::PERFORMED_PROCEDURE_CODE_SEQUENCE,
         document.procedures_reported.iter().map(code_item).collect(),

@@ -1,3 +1,5 @@
+use dicom_dictionary_std::tags;
+
 use crate::test_support::write_source_wsi_with_spacing;
 use crate::{
     AnnotationScheme, DicomAnnotationContext, LinearMeasurementSpec, MeasurementReportSemantics,
@@ -49,6 +51,15 @@ fn linear_measurement_sr_preserves_tracking_endpoints_and_anisotropic_distance()
 
     let output = directory.path().join("measurements.dcm");
     first.write_sr(&output).unwrap();
+    assert_eq!(
+        dicom_object::open_file(&output)
+            .unwrap()
+            .element(tags::CONTENT_QUALIFICATION)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        "SERVICE"
+    );
     let restored = StructuredReportDocument::read_sr(&output, &source, None).unwrap();
     assert_eq!(restored.groups()[0].tracking_id(), tracking.id());
     assert_eq!(restored.groups()[0].tracking_uid(), tracking.uid());

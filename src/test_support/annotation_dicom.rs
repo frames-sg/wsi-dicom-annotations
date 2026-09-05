@@ -361,6 +361,12 @@ pub(crate) fn write_source_wsi_with_spacing(
         VR::DS,
         "0",
     ));
+    let mut optical_path = InMemDicomObject::new_empty();
+    optical_path.put(DataElement::new(
+        tags::OPTICAL_PATH_IDENTIFIER,
+        VR::SH,
+        "OPTICAL-1",
+    ));
     let frame_count = width
         .div_ceil(u32::from(tile_width))
         .saturating_mul(height.div_ceil(u32::from(tile_height)));
@@ -375,7 +381,7 @@ pub(crate) fn write_source_wsi_with_spacing(
         DataElement::new(tags::STUDY_INSTANCE_UID, VR::UI, STUDY_UID),
         DataElement::new(tags::SERIES_INSTANCE_UID, VR::UI, SERIES_UID),
         DataElement::new(tags::FRAME_OF_REFERENCE_UID, VR::UI, FOR_UID),
-        DataElement::new(tags::PATIENT_NAME, VR::PN, "Research^Slide"),
+        DataElement::new(tags::PATIENT_NAME, VR::PN, "Example^Slide"),
         DataElement::new(tags::PATIENT_ID, VR::LO, "R-1"),
         DataElement::new(tags::STUDY_DATE, VR::DA, "20260804"),
         DataElement::new(tags::STUDY_TIME, VR::TM, "120000"),
@@ -419,6 +425,11 @@ pub(crate) fn write_source_wsi_with_spacing(
         tags::TOTAL_PIXEL_MATRIX_ORIGIN_SEQUENCE,
         VR::SQ,
         Value::from(DataSetSequence::new(vec![origin], Length::UNDEFINED)),
+    ));
+    object.put(DataElement::new(
+        tags::OPTICAL_PATH_SEQUENCE,
+        VR::SQ,
+        Value::from(DataSetSequence::new(vec![optical_path], Length::UNDEFINED)),
     ));
     object.put(DataElement::new(
         tags::PIXEL_DATA,

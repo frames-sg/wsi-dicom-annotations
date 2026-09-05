@@ -124,6 +124,57 @@ fn group_builders_preserve_declared_semantics_and_edit_only_matching_geometry() 
 }
 
 #[test]
+fn deterministic_uid_is_stable_for_semantics_and_ignores_geometry_and_prior_uid() {
+    let category = DicomCode::new("MORPH", "99FRAMES", "Morphology").unwrap();
+    let property = DicomCode::new("TUMOR", "99FRAMES", "Tumor").unwrap();
+    let first = AnnotationGroup::points(
+        "Cells",
+        category.clone(),
+        property.clone(),
+        [1, 2, 3],
+        vec![Point2::new(1.0, 2.0)],
+    )
+    .unwrap()
+    .with_description("stable semantics")
+    .unwrap()
+    .with_deterministic_uid("viewer", "slide-1", "finding-7")
+    .unwrap();
+    let mut second = AnnotationGroup::points(
+        "Cells",
+        category,
+        property,
+        [1, 2, 3],
+        vec![Point2::new(9.0, 10.0), Point2::new(11.0, 12.0)],
+    )
+    .unwrap()
+    .with_uid("2.25.42")
+    .unwrap()
+    .with_description("stable semantics")
+    .unwrap();
+    second
+        .add_measurement(AnnotationMeasurement::new(
+            DicomCode::new("COUNT", "99FRAMES", "Count").unwrap(),
+            DicomCode::new("1", "UCUM", "no units").unwrap(),
+            vec![1.0, 2.0],
+        ))
+        .unwrap();
+    let second = second
+        .with_deterministic_uid("viewer", "slide-1", "finding-7")
+        .unwrap();
+
+    assert_eq!(first.uid(), second.uid());
+    assert_eq!(first.uid(), "2.25.220411763936066836527837183276760079369");
+    assert_ne!(
+        first.uid(),
+        first
+            .clone()
+            .with_deterministic_uid("viewer", "slide-1", "finding-8")
+            .unwrap()
+            .uid()
+    );
+}
+
+#[test]
 fn checked_geometry_replacement_is_atomic_and_revalidates_topology_and_coordinates() {
     let category = DicomCode::new("MORPH", "99FRAMES", "Morphology").unwrap();
     let property = DicomCode::new("TUMOR", "99FRAMES", "Tumor").unwrap();

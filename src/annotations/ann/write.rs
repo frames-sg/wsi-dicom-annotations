@@ -83,18 +83,26 @@ pub(super) fn write_ann(
                 })?,
         );
         if preserve_volume_identity {
-            put_optional_text(
-                &mut object,
-                tags::FRAME_OF_REFERENCE_UID,
-                VR::UI,
-                document.source.frame_of_reference_uid(),
-            );
-            put_optional_text(
-                &mut object,
-                tags::CONTAINER_IDENTIFIER,
-                VR::LO,
-                document.source.container_identifier(),
-            );
+            if document.volume_frame_of_reference_present {
+                put_optional_text(
+                    &mut object,
+                    tags::FRAME_OF_REFERENCE_UID,
+                    VR::UI,
+                    document.source.frame_of_reference_uid(),
+                );
+            } else {
+                object.take(tags::FRAME_OF_REFERENCE_UID);
+            }
+            if document.volume_container_identifier_present {
+                put_optional_text(
+                    &mut object,
+                    tags::CONTAINER_IDENTIFIER,
+                    VR::LO,
+                    document.source.container_identifier(),
+                );
+            } else {
+                object.take(tags::CONTAINER_IDENTIFIER);
+            }
         }
     } else if let Some(frame_of_reference_uid) = document.source.frame_of_reference_uid() {
         put_text(

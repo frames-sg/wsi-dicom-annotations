@@ -31,7 +31,7 @@ pub(super) fn add_general_image_attributes(
         ),
         (tags::BURNED_IN_ANNOTATION, VR::CS, "NO"),
         (tags::RECOGNIZABLE_VISUAL_FEATURES, VR::CS, "NO"),
-        (tags::CONTENT_QUALIFICATION, VR::CS, "RESEARCH"),
+        (tags::CONTENT_QUALIFICATION, VR::CS, "SERVICE"),
         (tags::PRESENTATION_LUT_SHAPE, VR::CS, "IDENTITY"),
     ] {
         put_text(object, tag, vr, value);

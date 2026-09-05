@@ -39,6 +39,7 @@ pub struct DicomAnnotationContext {
     dimension_organization_type: Option<String>,
     number_of_frames: Option<u32>,
     number_of_optical_paths: Option<u32>,
+    optical_path_identifiers: Vec<String>,
     total_pixel_matrix_focal_planes: Option<u32>,
     sparse_frame_origins: Option<Vec<FrameOrigin>>,
 }
@@ -75,6 +76,15 @@ impl DicomAnnotationContext {
             optional_string(&object, tags::DIMENSION_ORGANIZATION_TYPE);
         let sparse_frame_origins =
             read_sparse_frame_origins(&object, dimension_organization_type.as_deref())?;
+        let number_of_optical_paths = optional_u32(&object, tags::NUMBER_OF_OPTICAL_PATHS);
+        let optical_path_identifiers = read_optical_path_identifiers(&object)?;
+        if !optical_path_identifiers.is_empty()
+            && number_of_optical_paths != u32::try_from(optical_path_identifiers.len()).ok()
+        {
+            return Err(Error::InvalidInput(
+                "Optical Path Sequence length does not match Number of Optical Paths".into(),
+            ));
+        }
         Ok(Self {
             source_path,
             sop_class_uid,
@@ -95,7 +105,8 @@ impl DicomAnnotationContext {
             total_pixel_matrix_origin: optional_origin(&object),
             dimension_organization_type,
             number_of_frames: optional_u32(&object, tags::NUMBER_OF_FRAMES),
-            number_of_optical_paths: optional_u32(&object, tags::NUMBER_OF_OPTICAL_PATHS),
+            number_of_optical_paths,
+            optical_path_identifiers,
             total_pixel_matrix_focal_planes: optional_u32(
                 &object,
                 tags::TOTAL_PIXEL_MATRIX_FOCAL_PLANES,
@@ -171,6 +182,12 @@ impl DicomAnnotationContext {
     #[must_use]
     pub const fn total_pixel_matrix_origin(&self) -> Option<[f64; 3]> {
         self.total_pixel_matrix_origin
+    }
+
+    /// Returns identifiers declared by the source WSI Optical Path Sequence.
+    #[must_use]
+    pub fn optical_path_identifiers(&self) -> &[String] {
+        &self.optical_path_identifiers
     }
 
     pub fn slide_coordinate_to_pixel(&self, x: f64, y: f64) -> Result<Point2> {
@@ -400,6 +417,32 @@ impl DicomAnnotationContext {
         }
         Ok(())
     }
+}
+
+fn read_optical_path_identifiers(object: &DefaultDicomObject) -> Result<Vec<String>> {
+    let Some(items) = object
+        .get(tags::OPTICAL_PATH_SEQUENCE)
+        .and_then(|element| element.items())
+    else {
+        return Ok(Vec::new());
+    };
+    if items.is_empty() {
+        return Err(Error::InvalidInput(
+            "Optical Path Sequence must not be empty when present".into(),
+        ));
+    }
+    let mut identifiers = Vec::with_capacity(items.len());
+    for item in items {
+        let identifier = required_string(item, tags::OPTICAL_PATH_IDENTIFIER)?;
+        super::model::validate_text("optical path identifier", &identifier, 16)?;
+        if identifiers.contains(&identifier) {
+            return Err(Error::InvalidInput(format!(
+                "duplicate optical path identifier {identifier:?}"
+            )));
+        }
+        identifiers.push(identifier);
+    }
+    Ok(identifiers)
 }
 
 fn optional_pair(object: &DefaultDicomObject, tag: Tag) -> Option<[f64; 2]> {

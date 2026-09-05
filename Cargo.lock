@@ -1067,6 +1067,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
 
 [[package]]
+name = "peak_alloc"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccc90935a8dd139fdf341762773687a1e361d3f54b396a55d9dd1f7001e484bb"
+
+[[package]]
 name = "pest"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1818,8 +1824,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
+name = "wsi-annotation-probe"
+version = "0.1.0"
+dependencies = [
+ "dicom-core",
+ "dicom-dictionary-std",
+ "dicom-object",
+ "peak_alloc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tiff",
+ "wsi-dicom-annotations",
+]
+
+[[package]]
 name = "wsi-dicom-annotations"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "dicom-core",

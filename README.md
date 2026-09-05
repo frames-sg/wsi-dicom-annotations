@@ -1,5 +1,9 @@
 # wsi-dicom-annotations
 
+This README describes the 0.1.2 development API. The latest crates.io release
+is 0.1.1; the headless CLI and shared metadata-reader API described below are
+available from the 0.1.2 source checkout.
+
 `wsi-dicom-annotations` provides UI-independent Rust models, readers, writers,
 and conversion boundaries for DICOM Whole Slide Microscopy derived objects:
 
@@ -21,6 +25,25 @@ the exact referenced source SOP Class and Instance UIDs and copies a valid
 source Frame of Reference UID and Container Identifier when present. It omits
 either optional identity when the source omits it; these copied attributes aid
 viewer association and do not replace the normative 2D image reference.
+
+## Headless annotation CLI
+
+This repository also owns `wsi-annotation-probe`, a standalone command-line package
+with no viewer or GUI dependencies:
+
+```console
+cargo build -p wsi-annotation-probe --bin annotation_probe --locked
+cargo test -p wsi-annotation-probe --locked
+```
+
+`target/debug/annotation_probe` supports `inspect`, `roundtrip`, `convert-geojson`,
+and `convert-raster`. It preserves the versioned JSON stdout reports and exit codes
+used by `wsi-annotation-interop`; diagnostics go to stderr. Newly converted objects
+identify the producer as Frames / Annotation Probe and use the CLI package version.
+Existing DICOM identities are retained by the inspection and roundtrip paths.
+
+`metadata::open_metadata_object` is the shared bounded, pixel-free metadata reader
+for this library and the viewer. Its API documents admission limits and error types.
 
 ## Checked editing and derived-object identity
 

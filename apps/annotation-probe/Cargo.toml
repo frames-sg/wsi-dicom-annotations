@@ -1,0 +1,26 @@
+[package]
+name = "wsi-annotation-probe"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.96"
+license = "MIT OR Apache-2.0"
+description = "Headless DICOM annotation inspection and conversion CLI"
+publish = false
+
+[[bin]]
+name = "annotation_probe"
+path = "src/main.rs"
+
+[dependencies]
+wsi-dicom-annotations = { version = "=0.1.2", path = "../.." }
+peak_alloc = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+dicom-core = "0.9"
+dicom-dictionary-std = "0.9"
+dicom-object = "0.9"
+tempfile = "3"
+tiff = { version = "=0.11.3", default-features = false, features = ["deflate", "lzw", "zstd"] }

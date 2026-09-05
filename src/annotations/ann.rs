@@ -30,6 +30,8 @@ pub struct AnnotationDocument {
     pixel_origin_interpretation: Option<String>,
     references_source_image: bool,
     referenced_frame_number: Option<u32>,
+    volume_frame_of_reference_present: bool,
+    volume_container_identifier_present: bool,
     content_label: String,
     content_description: String,
     content_creator_name: Option<String>,
@@ -40,6 +42,9 @@ pub struct AnnotationDocument {
 
 impl AnnotationDocument {
     pub fn new(source: DicomAnnotationContext, groups: Vec<AnnotationGroup>) -> Result<Self> {
+        validate_new_2d_groups(&source, &groups)?;
+        let volume_frame_of_reference_present = source.frame_of_reference_uid().is_some();
+        let volume_container_identifier_present = source.container_identifier().is_some();
         let document = Self {
             source,
             sop_instance_uid: new_dicom_uid(),
@@ -49,6 +54,8 @@ impl AnnotationDocument {
             pixel_origin_interpretation: Some("VOLUME".into()),
             references_source_image: true,
             referenced_frame_number: None,
+            volume_frame_of_reference_present,
+            volume_container_identifier_present,
             content_label: "WSI_ANNOTATION".into(),
             content_description: "WSI vector annotations".into(),
             content_creator_name: None,
@@ -85,6 +92,7 @@ impl AnnotationDocument {
     }
 
     pub fn revised_with_groups(&self, groups: Vec<AnnotationGroup>) -> Result<Self> {
+        validate_new_2d_groups(&self.source, &groups)?;
         let mut document = self.revised();
         document.groups = groups;
         document.validate()?;
@@ -105,6 +113,7 @@ impl AnnotationDocument {
 
     /// Atomically replaces all groups after validating group and document invariants.
     pub fn replace_groups(&mut self, groups: Vec<AnnotationGroup>) -> Result<()> {
+        validate_new_2d_groups(&self.source, &groups)?;
         let mut candidate = self.clone();
         candidate.groups = groups;
         candidate.validate()?;
@@ -358,4 +367,27 @@ impl AnnotationDocument {
         }
         Ok(())
     }
+}
+
+fn validate_new_2d_groups(
+    source: &DicomAnnotationContext,
+    groups: &[AnnotationGroup],
+) -> Result<()> {
+    for group in groups {
+        if !group.applies_to_all_z_planes() || !group.common_z_coordinates().is_empty() {
+            return Err(Error::Unsupported(format!(
+                "2D ANN group {:?} cannot carry Z-plane applicability",
+                group.label()
+            )));
+        }
+        for path in group.referenced_optical_paths() {
+            if !source.optical_path_identifiers().contains(path) {
+                return Err(Error::InvalidInput(format!(
+                    "annotation group {:?} references optical path {path:?}, which is not declared by the source WSI",
+                    group.label()
+                )));
+            }
+        }
+    }
+    Ok(())
 }

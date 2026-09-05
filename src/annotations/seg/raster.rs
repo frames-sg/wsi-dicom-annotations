@@ -1,59 +1,11 @@
 use std::collections::BTreeSet;
 
 use super::{
-    BinaryMaskRun, BinarySegmentationFrame, FractionalMaskRun, SegmentationSegment,
-    MAX_SEGMENTATION_FRAMES, MAX_SEGMENTATION_PIXELS,
+    BinarySegmentationFrame, SegmentationSegment, MAX_SEGMENTATION_FRAMES, MAX_SEGMENTATION_PIXELS,
 };
 use crate::annotations::context::DicomAnnotationContext;
 use crate::annotations::model::{polygon_contains_point, Point2};
 use crate::{Error, Result};
-
-pub(super) struct RunBudget {
-    count: usize,
-    limit: usize,
-}
-
-impl RunBudget {
-    pub(super) const fn new(limit: usize) -> Self {
-        Self { count: 0, limit }
-    }
-
-    fn record(&mut self) -> Result<()> {
-        self.count = self
-            .count
-            .checked_add(1)
-            .ok_or_else(|| Error::InvalidInput("SEG run count overflows".into()))?;
-        if self.count > self.limit {
-            return Err(Error::InvalidInput(format!(
-                "SEG normalization exceeds the {}-run resource limit",
-                self.limit
-            )));
-        }
-        Ok(())
-    }
-}
-
-pub(super) fn scan_nonzero_ranges<T>(
-    values: &[T],
-    mut is_nonzero: impl FnMut(&T) -> bool,
-    budget: &mut RunBudget,
-    mut emit: impl FnMut(std::ops::Range<usize>) -> Result<()>,
-) -> Result<()> {
-    let mut column = 0_usize;
-    while column < values.len() {
-        if !is_nonzero(&values[column]) {
-            column += 1;
-            continue;
-        }
-        let start = column;
-        while column < values.len() && is_nonzero(&values[column]) {
-            column += 1;
-        }
-        budget.record()?;
-        emit(start..column)?;
-    }
-    Ok(())
-}
 
 pub(super) fn rasterize_segments(
     source: &DicomAnnotationContext,
@@ -171,60 +123,4 @@ fn polygon_candidate_tiles(
     let final_row = ((max_y.max(0.0) / f64::from(tile_height)).floor() as u32).min(last_row);
     (first_row..=final_row)
         .flat_map(move |tile_row| (first_col..=final_col).map(move |tile_col| (tile_row, tile_col)))
-}
-
-pub(super) fn merge_binary_runs(runs: Vec<BinaryMaskRun>) -> Result<Vec<BinaryMaskRun>> {
-    let mut merged: Vec<BinaryMaskRun> = Vec::with_capacity(runs.len());
-    for run in runs {
-        if let Some(previous) = merged.last_mut() {
-            let previous_end = previous
-                .column_start
-                .checked_add(previous.length)
-                .ok_or_else(|| Error::InvalidInput("SEG run end overflows".into()))?;
-            let run_end = run
-                .column_start
-                .checked_add(run.length)
-                .ok_or_else(|| Error::InvalidInput("SEG run end overflows".into()))?;
-            if previous.segment_number == run.segment_number
-                && previous.row == run.row
-                && run.column_start <= previous_end
-            {
-                previous.length = previous_end.max(run_end) - previous.column_start;
-                continue;
-            }
-        }
-        merged.push(run);
-    }
-    Ok(merged)
-}
-
-pub(super) fn merge_fractional_runs(
-    runs: Vec<FractionalMaskRun>,
-) -> Result<Vec<FractionalMaskRun>> {
-    let mut merged: Vec<FractionalMaskRun> = Vec::with_capacity(runs.len());
-    for run in runs {
-        if let Some(previous) = merged.last_mut() {
-            let previous_end = previous
-                .column_start
-                .checked_add(u32::try_from(previous.values.len()).map_err(|_| {
-                    Error::InvalidInput("fractional SEG run length exceeds DICOM range".into())
-                })?)
-                .ok_or_else(|| Error::InvalidInput("SEG run end overflows".into()))?;
-            if previous.segment_number == run.segment_number && previous.row == run.row {
-                if run.column_start < previous_end {
-                    return Err(Error::InvalidInput(
-                        "fractional SEG frames overlap within the same segment".into(),
-                    ));
-                }
-                if run.column_start == previous_end
-                    && previous.maximum_fractional_value == run.maximum_fractional_value
-                {
-                    previous.values.extend(run.values);
-                    continue;
-                }
-            }
-        }
-        merged.push(run);
-    }
-    Ok(merged)
 }
