@@ -3,7 +3,7 @@
 //! The reader preflights file meta and data-set structure on the same file handle used
 //! for parsing. Limits apply before materializing values; pixel data is never loaded.
 
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 
 use dicom_core::{Tag, VR};
@@ -228,16 +228,19 @@ fn read_explicit_header(file: &mut std::fs::File, path: &Path) -> Result<Explici
 }
 
 fn preflight_data_set(
-    file: &mut std::fs::File,
+    file: &mut (impl Read + Seek),
     path: &Path,
     transfer_syntax: &TransferSyntax,
 ) -> Result<()> {
-    let mut reader = LazyDataSetReader::new_with_ts(file, transfer_syntax).map_err(|error| {
-        invalid_metadata(
-            path,
-            format!("could not initialize metadata parser: {error}"),
-        )
-    })?;
+    // The lazy parser does not buffer its source. Batch its small header/value
+    // reads; this buffer is dropped before the owning caller rewinds the file.
+    let mut reader = LazyDataSetReader::new_with_ts(BufReader::new(file), transfer_syntax)
+        .map_err(|error| {
+            invalid_metadata(
+                path,
+                format!("could not initialize metadata parser: {error}"),
+            )
+        })?;
     let mut token_count = 0_usize;
     let mut sequence_depth = 0_usize;
     let mut declared_value_bytes = 0_u64;
