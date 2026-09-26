@@ -3,7 +3,7 @@ use dicom_dictionary_std::tags;
 use dicom_object::InMemDicomObject;
 
 use crate::annotations::context::DicomAnnotationContext;
-use crate::annotations::dicom_dataset::{optional_string, required_u32};
+use crate::annotations::dicom_dataset::{optional_string, required_u16, required_u32};
 use crate::annotations::seg::BinarySegmentationFrame;
 use crate::{Error, Result};
 
@@ -12,14 +12,8 @@ fn read_frame_position(
     source: &DicomAnnotationContext,
     columns: u16,
     rows: u16,
+    segment_number: u16,
 ) -> Result<(u16, u32, u32)> {
-    let segment_number = item
-        .get(tags::SEGMENT_IDENTIFICATION_SEQUENCE)
-        .and_then(|element| element.items())
-        .and_then(|items| items.first())
-        .and_then(|item| item.get(tags::REFERENCED_SEGMENT_NUMBER))
-        .and_then(|element| element.to_int::<u16>().ok())
-        .unwrap_or(1);
     let plane = item
         .get(tags::PLANE_POSITION_SLIDE_SEQUENCE)
         .and_then(|element| element.items())
@@ -36,6 +30,13 @@ fn read_frame_position(
     if col_position == 0 || row_position == 0 {
         return Err(Error::InvalidInput(
             "SEG frame positions are one-based and cannot be zero".into(),
+        ));
+    }
+    if !(col_position - 1).is_multiple_of(u32::from(columns))
+        || !(row_position - 1).is_multiple_of(u32::from(rows))
+    {
+        return Err(Error::Unsupported(
+            "SEG frame positions must align with frame dimensions".into(),
         ));
     }
     let tile_col = (col_position - 1) / u32::from(columns);
@@ -59,6 +60,11 @@ pub(super) fn read_frame_positions(
     channel_segment_numbers: Option<&[u16]>,
     missing_message: &str,
 ) -> Result<Vec<(u16, u32, u32)>> {
+    if columns == 0 || rows == 0 {
+        return Err(Error::InvalidInput(
+            "SEG Rows and Columns must be positive".into(),
+        ));
+    }
     if let Some(frame_items) = object
         .get(tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE)
         .and_then(|element| element.items())
@@ -69,9 +75,38 @@ pub(super) fn read_frame_positions(
                 frame_items.len()
             )));
         }
+        let shared = object
+            .get(tags::SHARED_FUNCTIONAL_GROUPS_SEQUENCE)
+            .and_then(|element| element.items())
+            .and_then(|items| items.first());
         return frame_items
             .iter()
-            .map(|item| read_frame_position(item, source, columns, rows))
+            .map(|item| {
+                let segment_number = if let Some(segment_numbers) = channel_segment_numbers {
+                    let identification = item
+                        .get(tags::SEGMENT_IDENTIFICATION_SEQUENCE)
+                        .or_else(|| shared?.get(tags::SEGMENT_IDENTIFICATION_SEQUENCE))
+                        .and_then(|element| element.items())
+                        .filter(|items| items.len() == 1)
+                        .and_then(|items| items.first())
+                        .ok_or_else(|| {
+                            Error::InvalidInput(
+                                "SEG frame requires one Segment Identification item in its per-frame or shared functional groups".into(),
+                            )
+                        })?;
+                    let number = required_u16(identification, tags::REFERENCED_SEGMENT_NUMBER)?;
+                    if !segment_numbers.contains(&number) {
+                        return Err(Error::InvalidInput(format!(
+                            "SEG frame references unknown Segment Number {number}"
+                        )));
+                    }
+                    number
+                } else {
+                    // LABELMAP segment identities are encoded in the pixel values.
+                    1
+                };
+                read_frame_position(item, source, columns, rows, segment_number)
+            })
             .collect();
     }
     if optional_string(object, tags::DIMENSION_ORGANIZATION_TYPE).as_deref() != Some("TILED_FULL") {
