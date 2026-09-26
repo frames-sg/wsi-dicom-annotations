@@ -1,6 +1,178 @@
 use super::*;
 
 #[test]
+fn segmentation_import_preserves_shared_segment_identification() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("source.dcm");
+    let input = directory.path().join("seg.dcm");
+    write_source_wsi(&source, 4, 4, 4, 4);
+    write_fractional_seg(&input, [128; 16]);
+    let context = DicomAnnotationContext::from_source(&source).unwrap();
+    let mut object = dicom_object::open_file(&input).unwrap();
+    let mut segments = object.take(tags::SEGMENT_SEQUENCE).unwrap();
+    segments.update_value(|value| {
+        let items = value.items_mut().unwrap();
+        let mut second = items[0].clone();
+        second.put(DataElement::new(
+            tags::SEGMENT_NUMBER,
+            VR::US,
+            PrimitiveValue::from(2_u16),
+        ));
+        items.push(second);
+    });
+    object.put(segments);
+    let mut frames = object
+        .take(tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE)
+        .unwrap();
+    let mut identification = None;
+    frames.update_value(|value| {
+        let mut sequence = value.items_mut().unwrap()[0]
+            .take(tags::SEGMENT_IDENTIFICATION_SEQUENCE)
+            .unwrap();
+        sequence.update_value(|value| {
+            value.items_mut().unwrap()[0].put(DataElement::new(
+                tags::REFERENCED_SEGMENT_NUMBER,
+                VR::US,
+                PrimitiveValue::from(2_u16),
+            ));
+        });
+        identification = Some(sequence);
+    });
+    object.put(frames);
+    let mut shared = object
+        .take(tags::SHARED_FUNCTIONAL_GROUPS_SEQUENCE)
+        .unwrap();
+    shared.update_value(|value| {
+        value.items_mut().unwrap()[0].put(identification.take().unwrap());
+    });
+    object.put(shared);
+    object.write_to_file(&input).unwrap();
+
+    let imported = SegmentationDocument::read_seg(&input, &context).unwrap();
+    let frames = imported.fractional_frames().unwrap();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].segment_number(), 2);
+    assert_eq!(frames[0].values(), &[128; 16]);
+}
+
+#[test]
+fn segmentation_import_rejects_missing_or_unknown_segment_identification() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("source.dcm");
+    let input = directory.path().join("seg.dcm");
+    write_source_wsi(&source, 4, 4, 4, 4);
+    write_fractional_seg(&input, [128; 16]);
+    let context = DicomAnnotationContext::from_source(&source).unwrap();
+    let original = dicom_object::open_file(&input).unwrap();
+
+    for number in [None, Some(0_u16), Some(2_u16)] {
+        let mut object = original.clone();
+        let mut frames = object
+            .take(tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE)
+            .unwrap();
+        frames.update_value(|value| {
+            let frame = &mut value.items_mut().unwrap()[0];
+            let mut identification = frame.take(tags::SEGMENT_IDENTIFICATION_SEQUENCE).unwrap();
+            if let Some(number) = number {
+                identification.update_value(|value| {
+                    value.items_mut().unwrap()[0].put(DataElement::new(
+                        tags::REFERENCED_SEGMENT_NUMBER,
+                        VR::US,
+                        PrimitiveValue::from(number),
+                    ));
+                });
+                frame.put(identification);
+            }
+        });
+        object.put(frames);
+        object.write_to_file(&input).unwrap();
+
+        assert!(
+            SegmentationDocument::read_seg(&input, &context).is_err(),
+            "invalid segment reference {number:?} was accepted"
+        );
+    }
+}
+
+#[test]
+fn segmentation_import_rejects_unaligned_frame_positions() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("source.dcm");
+    let input = directory.path().join("seg.dcm");
+    write_source_wsi(&source, 4, 4, 4, 4);
+    write_fractional_seg(&input, [128; 16]);
+    let context = DicomAnnotationContext::from_source(&source).unwrap();
+    let original = dicom_object::open_file(&input).unwrap();
+
+    for tag in [
+        tags::COLUMN_POSITION_IN_TOTAL_IMAGE_PIXEL_MATRIX,
+        tags::ROW_POSITION_IN_TOTAL_IMAGE_PIXEL_MATRIX,
+    ] {
+        let mut object = original.clone();
+        let mut frames = object
+            .take(tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE)
+            .unwrap();
+        frames.update_value(|value| {
+            let frame = &mut value.items_mut().unwrap()[0];
+            let mut plane = frame.take(tags::PLANE_POSITION_SLIDE_SEQUENCE).unwrap();
+            plane.update_value(|value| {
+                value.items_mut().unwrap()[0].put(DataElement::new(
+                    tag,
+                    VR::SL,
+                    PrimitiveValue::from(2_i32),
+                ));
+            });
+            frame.put(plane);
+        });
+        object.put(frames);
+        object.write_to_file(&input).unwrap();
+
+        assert!(SegmentationDocument::read_seg(&input, &context).is_err());
+    }
+}
+
+#[test]
+fn segmentation_import_rejects_zero_frame_dimensions() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("source.dcm");
+    let input = directory.path().join("seg.dcm");
+    write_source_wsi(&source, 4, 4, 4, 4);
+    write_fractional_seg(&input, [128; 16]);
+    let context = DicomAnnotationContext::from_source(&source).unwrap();
+    let original = dicom_object::open_file(&input).unwrap();
+
+    for tiled_full in [false, true] {
+        for tag in [tags::ROWS, tags::COLUMNS] {
+            let mut object = original.clone();
+            if tiled_full {
+                object
+                    .take(tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE)
+                    .unwrap();
+                object.put(DataElement::new(
+                    tags::DIMENSION_ORGANIZATION_TYPE,
+                    VR::CS,
+                    "TILED_FULL",
+                ));
+                for dimension in [
+                    tags::TOTAL_PIXEL_MATRIX_ROWS,
+                    tags::TOTAL_PIXEL_MATRIX_COLUMNS,
+                ] {
+                    object.put(DataElement::new(
+                        dimension,
+                        VR::UL,
+                        PrimitiveValue::from(4_u32),
+                    ));
+                }
+            }
+            object.put(DataElement::new(tag, VR::US, PrimitiveValue::from(0_u16)));
+            object.write_to_file(&input).unwrap();
+
+            assert!(SegmentationDocument::read_seg(&input, &context).is_err());
+        }
+    }
+}
+
+#[test]
 fn sparse_binary_segmentation_preserves_a_hole_and_omits_empty_tiles() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("source.dcm");
