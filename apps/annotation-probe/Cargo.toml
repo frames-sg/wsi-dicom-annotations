@@ -12,7 +12,7 @@ name = "annotation_probe"
 path = "src/main.rs"
 
 [dependencies]
-wsi-dicom-annotations = { version = "=0.1.2", path = "../.." }
+wsi-dicom-annotations = { version = "=0.1.3", path = "../.." }
 peak_alloc = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
