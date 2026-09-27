@@ -4,7 +4,7 @@ members = [".", "apps/annotation-probe"]
 
 [package]
 name = "wsi-dicom-annotations"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 rust-version = "1.96"
 license = "MIT OR Apache-2.0"
