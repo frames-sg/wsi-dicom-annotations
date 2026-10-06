@@ -1,8 +1,8 @@
 # wsi-dicom-annotations
 
-This README describes the published [0.1.3 library](https://crates.io/crates/wsi-dicom-annotations/0.1.3),
+This README describes the [0.1.4 library](https://crates.io/crates/wsi-dicom-annotations/0.1.4),
 including the shared metadata reader. The headless CLI is available from the
-0.1.3 source checkout.
+0.1.4 source checkout.
 
 `wsi-dicom-annotations` provides UI-independent Rust models, readers, writers,
 and conversion boundaries for DICOM Whole Slide Microscopy derived objects:
