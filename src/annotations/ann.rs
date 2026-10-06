@@ -312,7 +312,7 @@ impl AnnotationDocument {
                                 "2D ANN geometry does not contain coordinate pairs".into(),
                             ));
                         }
-                        for point in coordinates.chunks_exact(2) {
+                        for point in coordinates.as_chunks::<2>().0 {
                             match self.pixel_origin_interpretation.as_deref() {
                                 Some("VOLUME") => self.source.validate_point(point[0], point[1])?,
                                 Some("FRAME") => {

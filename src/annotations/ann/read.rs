@@ -283,9 +283,16 @@ fn read_group(
         .unwrap_or_default();
     if coordinate_dimensions == 3 {
         let first_z = coordinates[2];
-        if coordinates.chunks_exact(3).all(|point| point[2] == first_z) {
+        if coordinates
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .all(|point| point[2] == first_z)
+        {
             coordinates = coordinates
-                .chunks_exact(3)
+                .as_chunks::<3>()
+                .0
+                .iter()
                 .flat_map(|point| [point[0], point[1]])
                 .collect();
             for index in &mut indices {
@@ -309,7 +316,9 @@ fn read_group(
     let geometry = if editable_coordinates && graphic_type == AnnotationGraphicType::Point {
         AnnotationGeometry::Points(
             coordinates
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|point| Point2::new(point[0], point[1]))
                 .collect(),
         )

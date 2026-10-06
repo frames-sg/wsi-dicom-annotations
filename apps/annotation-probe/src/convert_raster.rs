@@ -371,7 +371,6 @@ fn pm_output_report(
 #[cfg(test)]
 mod tests {
     use std::fs::File;
-    use std::io::Write as _;
 
     use dicom_dictionary_std::{tags, uids};
 

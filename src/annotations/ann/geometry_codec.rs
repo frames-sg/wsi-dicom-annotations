@@ -141,7 +141,9 @@ pub(super) fn decode_polygons(coordinates: &[f64], indices: &[u32]) -> Result<Ve
             ));
         }
         let polygon = coordinates[start..end]
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|point| Point2::new(point[0], point[1]))
             .collect::<Vec<_>>();
         validate_polygon(&polygon)?;

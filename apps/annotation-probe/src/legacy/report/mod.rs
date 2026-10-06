@@ -245,21 +245,21 @@ fn canonical_coordinate_iter(
 ) -> Result<std::vec::IntoIter<f64>, String> {
     let mut values = Vec::new();
     if document.coordinate_type() == "2D" {
-        for point in native_coordinates.chunks_exact(2) {
+        for point in native_coordinates.as_chunks::<2>().0 {
             let canonical = document
                 .canonical_level0_pixel(canonical_source, point[0], point[1], None)
                 .map_err(|error| format!("coordinate canonicalization failed: {error}"))?;
             values.extend([canonical.x, canonical.y]);
         }
     } else if native_dimensions == 3 {
-        for point in native_coordinates.chunks_exact(3) {
+        for point in native_coordinates.as_chunks::<3>().0 {
             let canonical = document
                 .canonical_level0_pixel(canonical_source, point[0], point[1], Some(point[2]))
                 .map_err(|error| format!("coordinate canonicalization failed: {error}"))?;
             values.extend([canonical.x, canonical.y, point[2]]);
         }
     } else {
-        for point in native_coordinates.chunks_exact(2) {
+        for point in native_coordinates.as_chunks::<2>().0 {
             for z in group.common_z_coordinates() {
                 let canonical = document
                     .canonical_level0_pixel(canonical_source, point[0], point[1], Some(*z))

@@ -224,8 +224,10 @@ fn float32_parametric_map_streams_required_metadata_and_exact_pixels() {
     );
     let payload = last_explicit_long_value(&output_path, tags::FLOAT_PIXEL_DATA, b"OF");
     let actual = payload
-        .chunks_exact(4)
-        .map(|bytes| f32::from_le_bytes(bytes.try_into().unwrap()).to_bits())
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|bytes| f32::from_le_bytes(*bytes).to_bits())
         .collect::<Vec<_>>();
     let expected = values
         .iter()
@@ -390,8 +392,10 @@ fn integer_parametric_map_applies_declared_scaling_and_output_precision() {
         .any(|diagnostic| diagnostic.code() == "RASTER_INTEGER_SCALED"));
     let payload = last_explicit_long_value(&output_path, tags::DOUBLE_FLOAT_PIXEL_DATA, b"OD");
     let values = payload
-        .chunks_exact(8)
-        .map(|bytes| f64::from_le_bytes(bytes.try_into().unwrap()))
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|bytes| f64::from_le_bytes(*bytes))
         .collect::<Vec<_>>();
     assert_eq!(values[0], 1.5);
     assert_eq!(values[1].to_bits(), 0x7ff8_0000_0000_0000);
@@ -451,11 +455,11 @@ fn all_missing_tiles_are_omitted_as_tiled_sparse_frames() {
     );
     let payload = last_explicit_long_value(&output_path, tags::FLOAT_PIXEL_DATA, b"OF");
     assert_eq!(f32::from_le_bytes(payload[..4].try_into().unwrap()), 0.75);
-    assert!(payload[4..].chunks_exact(4).all(|bytes| f32::from_le_bytes(
-        bytes.try_into().unwrap()
-    )
-    .to_bits()
-        == 0x7fc0_0000));
+    assert!(payload[4..]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .all(|bytes| f32::from_le_bytes(*bytes).to_bits() == 0x7fc0_0000));
 }
 
 #[test]

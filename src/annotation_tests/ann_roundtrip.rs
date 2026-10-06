@@ -627,7 +627,9 @@ fn ann_round_trip_preserves_points_polygons_codes_color_and_measurements() {
         .to_multi_float64()
         .unwrap();
     let polygon = coordinates[0..8]
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|point| Point2::new(point[0], point[1]))
         .collect::<Vec<_>>();
     assert!(

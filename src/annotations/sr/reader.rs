@@ -297,7 +297,9 @@ fn read_coordinates(
     Ok(SpatialCoordinates {
         graphic,
         points: values
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|point| Point3::new(point[0], point[1], point[2]))
             .collect(),
         frame_of_reference_uid,
