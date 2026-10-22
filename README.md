@@ -1,5 +1,10 @@
 # wsi-dicom-annotations
 
+[![CI](https://github.com/frames-sg/wsi-dicom-annotations/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/frames-sg/wsi-dicom-annotations/actions/workflows/ci.yml?query=branch%3Amain)
+
+[DICOM whole-slide workflow](https://frames-sg.com/dicom-whole-slide-conversion/) ·
+[API documentation](https://docs.rs/wsi-dicom-annotations)
+
 This README describes the [0.1.4 library](https://crates.io/crates/wsi-dicom-annotations/0.1.4),
 including the shared metadata reader. The headless CLI is available from the
 0.1.4 source checkout.
