@@ -30,6 +30,15 @@ allow = [
 ]
 confidence-threshold = 0.93
 
+# First-party packages offer AGPLv3 or a separate commercial agreement.
+[[licenses.exceptions]]
+name = "wsi-dicom-annotations"
+allow = ["AGPL-3.0-only"]
+
+[[licenses.exceptions]]
+name = "wsi-annotation-probe"
+allow = ["AGPL-3.0-only"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"

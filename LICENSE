@@ -1,6 +1,19 @@
-This project is dual-licensed under either of:
+Copyright (c) 2026 frames-sg contributors
 
-- MIT license (LICENSE-MIT)
-- Apache License, Version 2.0 (LICENSE-APACHE)
+Except for material covered by separate notices, this development version is
+offered under the GNU Affero General Public License, version 3 only
+(SPDX-License-Identifier: AGPL-3.0-only). The complete, unmodified license text
+is in LICENSE-AGPL.
 
-at your option.
+A separate commercial license is available from Frames. See
+COMMERCIAL-LICENSE.md for contact information. No commercial license is
+required for uses that comply with the AGPL.
+
+Previously released versions and material already licensed under MIT or
+Apache-2.0 retain those permissions. This change does not revoke existing
+permissive grants. LICENSE-MIT and LICENSE-APACHE are retained for those grants
+and separately licensed material; they do not grant MIT/Apache-2.0 permissions
+for new AGPL-only additions.
+
+Third-party components and files with their own license notices remain
+subject to their respective terms.

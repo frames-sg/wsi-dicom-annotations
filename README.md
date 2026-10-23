@@ -5,9 +5,10 @@
 [DICOM whole-slide workflow](https://frames-sg.com/dicom-whole-slide-conversion/) ·
 [API documentation](https://docs.rs/wsi-dicom-annotations)
 
-This README describes the [0.1.4 library](https://crates.io/crates/wsi-dicom-annotations/0.1.4),
-including the shared metadata reader. The headless CLI is available from the
-0.1.4 source checkout.
+This checkout is version 0.2.0, including the shared metadata reader and headless
+CLI. The [published 0.1.4 library](https://crates.io/crates/wsi-dicom-annotations/0.1.4)
+remains available under its original MIT/Apache-2.0 licenses; see [License](#license)
+for the new release's licensing.
 
 `wsi-dicom-annotations` provides UI-independent Rust models, readers, writers,
 and conversion boundaries for DICOM Whole Slide Microscopy derived objects:
@@ -131,7 +132,7 @@ tracking identity, and profiled external-data conversion. It deliberately does
 not contain a viewer, renderer, editing history, workspace persistence, PACS or
 DICOMweb transport, clinical workflow claims, or collaborative review state.
 
-`dicom-viewer` consumes this library for import and export. The separate
+Applications consume this library for import and export. The separate
 `wsi-annotation-interop` project remains an independent file-level conformance
 harness and does not share the production implementation.
 
@@ -141,6 +142,18 @@ Local Zarr support currently resolves `lru 0.16.4` through `zarrs 0.23.14`.
 RUSTSEC-2026-0253 requires a key with a panicking `Drop` implementation and
 unwind recovery; this dependency path uses only `StoreKey(String)` and
 `ChunkIndices(Vec<u64>)`, whose drops cannot panic. The repository records this
-reachability decision explicitly, and `dicom-viewer` additionally applies the
-upstream source-level backport. Remove the exception when a compatible `zarrs`
+reachability decision explicitly. Remove the exception when a compatible `zarrs`
 release permits `lru >= 0.18.2`.
+
+## License
+
+Starting with the 0.2.0 development release, this project is available under the
+[GNU Affero General Public License version 3 only](LICENSE-AGPL)
+(`AGPL-3.0-only`), or under a separate [commercial license](COMMERCIAL-LICENSE.md)
+from Frames. Commercial use is permitted under the AGPL without purchasing a
+commercial license when its terms are followed.
+
+Published releases through 0.1.4 retain their original MIT/Apache-2.0 licenses.
+Existing permissive grants and separately licensed material are preserved; see
+[LICENSE](LICENSE). The separate `wsi-annotation-interop` test harness retains
+its existing permissive licensing.
