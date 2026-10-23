@@ -147,13 +147,13 @@ release permits `lru >= 0.18.2`.
 
 ## License
 
-Starting with the 0.2.0 development release, this project is available under the
-[GNU Affero General Public License version 3 only](LICENSE-AGPL)
-(`AGPL-3.0-only`), or under a separate [commercial license](COMMERCIAL-LICENSE.md)
+Starting with version 0.2.0, this project is available under the
+[GNU Affero General Public License version 3 only](https://github.com/frames-sg/wsi-dicom-annotations/blob/main/LICENSE-AGPL)
+(`AGPL-3.0-only`), or under a separate [commercial license](https://github.com/frames-sg/wsi-dicom-annotations/blob/main/COMMERCIAL-LICENSE.md)
 from Frames. Commercial use is permitted under the AGPL without purchasing a
 commercial license when its terms are followed.
 
 Published releases through 0.1.4 retain their original MIT/Apache-2.0 licenses.
 Existing permissive grants and separately licensed material are preserved; see
-[LICENSE](LICENSE). The separate `wsi-annotation-interop` test harness retains
+[LICENSE](https://github.com/frames-sg/wsi-dicom-annotations/blob/main/LICENSE). The separate `wsi-annotation-interop` test harness retains
 its existing permissive licensing.
