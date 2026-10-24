@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn segmentation_import_enforces_pixel_budget_for_every_representation() {
+    let directory = tempfile::tempdir().unwrap();
+    let source = directory.path().join("source.dcm");
+    let input = directory.path().join("seg.dcm");
+    write_source_wsi(&source, 4, 4, 4, 4);
+    write_fractional_seg(&input, [128; 16]);
+    let context = DicomAnnotationContext::from_source(&source).unwrap();
+    let original = dicom_object::open_file(&input).unwrap();
+
+    for kind in ["BINARY", "FRACTIONAL", "LABELMAP"] {
+        let mut object = original.clone();
+        object.put(DataElement::new(tags::SEGMENTATION_TYPE, VR::CS, kind));
+        for tag in [tags::ROWS, tags::COLUMNS] {
+            object.put(DataElement::new(
+                tag,
+                VR::US,
+                PrimitiveValue::from(32768_u16),
+            ));
+        }
+        object.write_to_file(&input).unwrap();
+
+        let error = SegmentationDocument::read_seg(&input, &context).unwrap_err();
+        assert!(
+            error.to_string().contains("pixel import limit"),
+            "{kind} must reject excessive decoded pixels before reading the payload: {error}"
+        );
+    }
+}
+
+#[test]
 fn segmentation_import_preserves_shared_segment_identification() {
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("source.dcm");
