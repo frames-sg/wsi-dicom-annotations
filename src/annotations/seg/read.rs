@@ -2,14 +2,10 @@ mod layout;
 
 use std::collections::BTreeSet;
 
-use dicom_core::Tag;
 use dicom_dictionary_std::tags;
 use dicom_object::InMemDicomObject;
 
-use super::{
-    BinarySegmentationFrame, FractionalSegmentationFrame, SegmentationSegment,
-    MAX_SEGMENTATION_FRAMES, MAX_SEGMENTATION_PIXELS,
-};
+use super::{BinarySegmentationFrame, FractionalSegmentationFrame, SegmentationSegment};
 use crate::annotations::coded_content::{read_algorithms, read_code_at, read_codes_at};
 use crate::annotations::context::DicomAnnotationContext;
 use crate::annotations::dicom_dataset::{optional_string, required_string, required_u16};
@@ -18,7 +14,7 @@ use crate::annotations::model::{
     InteroperabilityDiagnostic,
 };
 use crate::{Error, Result};
-use layout::read_frame_positions;
+use layout::{enforce_pixel_budget, read_frame_positions, FrameLayout};
 pub(super) use layout::{segments_overlap, validate_source_reference};
 
 pub(super) fn read_segments(
@@ -140,14 +136,14 @@ pub(super) fn read_binary_frames(
     source: &DicomAnnotationContext,
     segments: &[SegmentationSegment],
 ) -> Result<Vec<BinarySegmentationFrame>> {
-    let rows = required_u16(object, tags::ROWS)?;
-    let columns = required_u16(object, tags::COLUMNS)?;
-    let frame_count = required_usize(object, tags::NUMBER_OF_FRAMES)?;
-    if frame_count == 0 || frame_count > MAX_SEGMENTATION_FRAMES {
-        return Err(Error::InvalidInput(format!(
-            "SEG frame count {frame_count} is outside the supported range"
-        )));
-    }
+    let layout = FrameLayout::read(object)?;
+    let FrameLayout {
+        rows,
+        columns,
+        pixels_per_frame,
+        pixel_count,
+        ..
+    } = layout;
     let segment_numbers = segments
         .iter()
         .filter_map(|segment| segment.source_segment_number)
@@ -156,16 +152,11 @@ pub(super) fn read_binary_frames(
     let frame_positions = read_frame_positions(
         object,
         source,
-        columns,
-        rows,
-        frame_count,
+        &layout,
         Some(&segment_numbers),
         "sparse SEG has no per-frame positions",
     )?;
-    let pixels_per_frame = usize::from(rows) * usize::from(columns);
-    let required_bits = pixels_per_frame
-        .checked_mul(frame_count)
-        .ok_or_else(|| Error::InvalidInput("SEG pixel count overflows".into()))?;
+    let required_bits = pixel_count;
     let bytes = object
         .get(tags::PIXEL_DATA)
         .ok_or_else(|| Error::InvalidInput("SEG has no Pixel Data".into()))?
@@ -202,23 +193,14 @@ pub(super) fn read_fractional_frames(
     source: &DicomAnnotationContext,
     segments: &[SegmentationSegment],
 ) -> Result<Vec<FractionalSegmentationFrame>> {
-    let rows = required_u16(object, tags::ROWS)?;
-    let columns = required_u16(object, tags::COLUMNS)?;
-    let frame_count = required_usize(object, tags::NUMBER_OF_FRAMES)?;
-    if frame_count == 0 || frame_count > MAX_SEGMENTATION_FRAMES {
-        return Err(Error::InvalidInput(
-            "fractional SEG frame count is outside the supported range".into(),
-        ));
-    }
-    let pixels_per_frame = usize::from(rows) * usize::from(columns);
-    let pixel_count = pixels_per_frame
-        .checked_mul(frame_count)
-        .ok_or_else(|| Error::InvalidInput("fractional SEG pixel count overflows".into()))?;
-    if pixel_count > MAX_SEGMENTATION_PIXELS {
-        return Err(Error::InvalidInput(format!(
-            "fractional SEG contains {pixel_count} pixels, exceeding the {MAX_SEGMENTATION_PIXELS}-pixel import limit"
-        )));
-    }
+    let layout = FrameLayout::read(object)?;
+    let FrameLayout {
+        rows,
+        columns,
+        pixels_per_frame,
+        pixel_count,
+        ..
+    } = layout;
     let segment_numbers = segments
         .iter()
         .filter_map(|segment| segment.source_segment_number)
@@ -227,9 +209,7 @@ pub(super) fn read_fractional_frames(
     let frame_positions = read_frame_positions(
         object,
         source,
-        columns,
-        rows,
-        frame_count,
+        &layout,
         Some(&segment_numbers),
         "fractional SEG has no frame positions",
     )?;
@@ -303,20 +283,18 @@ pub(super) fn read_labelmap_frames(
     source: &DicomAnnotationContext,
     segments: &[SegmentationSegment],
 ) -> Result<Vec<BinarySegmentationFrame>> {
-    let rows = required_u16(object, tags::ROWS)?;
-    let columns = required_u16(object, tags::COLUMNS)?;
-    let frame_count = required_usize(object, tags::NUMBER_OF_FRAMES)?;
-    if frame_count == 0 || frame_count > MAX_SEGMENTATION_FRAMES {
-        return Err(Error::InvalidInput(
-            "label-map SEG frame count is outside the supported range".into(),
-        ));
-    }
+    let layout = FrameLayout::read(object)?;
+    let FrameLayout {
+        rows,
+        columns,
+        pixels_per_frame,
+        pixel_count,
+        ..
+    } = layout;
     let frame_positions = read_frame_positions(
         object,
         source,
-        columns,
-        rows,
-        frame_count,
+        &layout,
         None,
         "label-map SEG has no frame positions",
     )?;
@@ -326,7 +304,6 @@ pub(super) fn read_labelmap_frames(
         .ok_or_else(|| Error::InvalidInput("label-map SEG has no Pixel Data".into()))?
         .to_bytes()
         .map_err(|error| Error::InvalidInput(format!("invalid SEG Pixel Data: {error}")))?;
-    let pixels_per_frame = usize::from(rows) * usize::from(columns);
     let sample_bytes = match bits {
         8 => 1,
         16 => 2,
@@ -336,17 +313,27 @@ pub(super) fn read_labelmap_frames(
             )))
         }
     };
-    if bytes.len()
-        < frame_count
-            .saturating_mul(pixels_per_frame)
-            .saturating_mul(sample_bytes)
-    {
+    if bytes.len() < pixel_count.saturating_mul(sample_bytes) {
         return Err(Error::InvalidInput(
             "label-map SEG frame metadata or Pixel Data is truncated".into(),
         ));
     }
     let mut frames = Vec::new();
+    let mut decoded_pixels = 0_usize;
+    let decode = |sample: &[u8]| {
+        if sample_bytes == 1 {
+            u16::from(sample[0])
+        } else {
+            u16::from_le_bytes([sample[0], sample[1]])
+        }
+    };
     for (frame_index, (_, tile_col, tile_row)) in frame_positions.into_iter().enumerate() {
+        let start = frame_index * pixels_per_frame * sample_bytes;
+        let frame_bytes = &bytes[start..start + pixels_per_frame * sample_bytes];
+        let present = frame_bytes
+            .chunks_exact(sample_bytes)
+            .map(decode)
+            .collect::<BTreeSet<_>>();
         for (segment_index, segment) in segments.iter().enumerate() {
             let segment_number =
                 segment
@@ -354,19 +341,16 @@ pub(super) fn read_labelmap_frames(
                     .unwrap_or(u16::try_from(segment_index + 1).map_err(|_| {
                         Error::InvalidInput("label-map SEG segment number exceeds US".into())
                     })?);
-            if segment_number == 0 {
+            if segment_number == 0 || !present.contains(&segment_number) {
                 continue;
             }
-            let mask = (0..pixels_per_frame)
-                .map(|pixel| {
-                    let offset = (frame_index * pixels_per_frame + pixel) * sample_bytes;
-                    let value = if sample_bytes == 1 {
-                        u16::from(bytes[offset])
-                    } else {
-                        u16::from_le_bytes([bytes[offset], bytes[offset + 1]])
-                    };
-                    value == segment_number
-                })
+            decoded_pixels = decoded_pixels
+                .checked_add(pixels_per_frame)
+                .ok_or_else(|| Error::InvalidInput("decoded SEG pixel count overflows".into()))?;
+            enforce_pixel_budget(decoded_pixels)?;
+            let mask = frame_bytes
+                .chunks_exact(sample_bytes)
+                .map(|sample| decode(sample) == segment_number)
                 .collect::<Vec<_>>();
             if mask.iter().any(|value| *value) {
                 frames.push(BinarySegmentationFrame {
@@ -381,11 +365,4 @@ pub(super) fn read_labelmap_frames(
         }
     }
     Ok(frames)
-}
-
-fn required_usize(object: &InMemDicomObject, tag: Tag) -> Result<usize> {
-    object
-        .get(tag)
-        .and_then(|element| element.to_int::<usize>().ok())
-        .ok_or_else(|| Error::InvalidInput(format!("missing or invalid attribute {tag}")))
 }

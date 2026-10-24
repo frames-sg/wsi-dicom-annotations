@@ -5,7 +5,7 @@
 [DICOM whole-slide workflow](https://frames-sg.com/dicom-whole-slide-conversion/) ·
 [API documentation](https://docs.rs/wsi-dicom-annotations)
 
-This checkout is version 0.2.0, including the shared metadata reader and headless
+This checkout is version 0.2.1, including the shared metadata reader and headless
 CLI. The [published 0.1.4 library](https://crates.io/crates/wsi-dicom-annotations/0.1.4)
 remains available under its original MIT/Apache-2.0 licenses; see [License](#license)
 for the new release's licensing.

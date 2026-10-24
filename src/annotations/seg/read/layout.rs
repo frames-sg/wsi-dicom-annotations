@@ -4,8 +4,58 @@ use dicom_object::InMemDicomObject;
 
 use crate::annotations::context::DicomAnnotationContext;
 use crate::annotations::dicom_dataset::{optional_string, required_u16, required_u32};
-use crate::annotations::seg::BinarySegmentationFrame;
+use crate::annotations::seg::{
+    BinarySegmentationFrame, MAX_SEGMENTATION_FRAMES, MAX_SEGMENTATION_PIXELS,
+};
 use crate::{Error, Result};
+
+pub(super) struct FrameLayout {
+    pub(super) rows: u16,
+    pub(super) columns: u16,
+    pub(super) frame_count: usize,
+    pub(super) pixels_per_frame: usize,
+    pub(super) pixel_count: usize,
+}
+
+impl FrameLayout {
+    pub(super) fn read(object: &InMemDicomObject) -> Result<Self> {
+        let rows = required_u16(object, tags::ROWS)?;
+        let columns = required_u16(object, tags::COLUMNS)?;
+        if rows == 0 || columns == 0 {
+            return Err(Error::InvalidInput(
+                "SEG Rows and Columns must be positive".into(),
+            ));
+        }
+        let frame_count = object
+            .get(tags::NUMBER_OF_FRAMES)
+            .and_then(|element| element.to_int::<usize>().ok())
+            .filter(|count| (1..=MAX_SEGMENTATION_FRAMES).contains(count))
+            .ok_or_else(|| {
+                Error::InvalidInput("SEG frame count is outside the supported range".into())
+            })?;
+        let pixels_per_frame = usize::from(rows) * usize::from(columns);
+        let pixel_count = pixels_per_frame
+            .checked_mul(frame_count)
+            .ok_or_else(|| Error::InvalidInput("SEG pixel count overflows".into()))?;
+        enforce_pixel_budget(pixel_count)?;
+        Ok(Self {
+            rows,
+            columns,
+            frame_count,
+            pixels_per_frame,
+            pixel_count,
+        })
+    }
+}
+
+pub(super) fn enforce_pixel_budget(pixel_count: usize) -> Result<()> {
+    if pixel_count > MAX_SEGMENTATION_PIXELS {
+        return Err(Error::InvalidInput(format!(
+            "SEG contains {pixel_count} pixels, exceeding the {MAX_SEGMENTATION_PIXELS}-pixel import limit"
+        )));
+    }
+    Ok(())
+}
 
 fn read_frame_position(
     item: &InMemDicomObject,
@@ -54,17 +104,16 @@ fn read_frame_position(
 pub(super) fn read_frame_positions(
     object: &InMemDicomObject,
     source: &DicomAnnotationContext,
-    columns: u16,
-    rows: u16,
-    frame_count: usize,
+    layout: &FrameLayout,
     channel_segment_numbers: Option<&[u16]>,
     missing_message: &str,
 ) -> Result<Vec<(u16, u32, u32)>> {
-    if columns == 0 || rows == 0 {
-        return Err(Error::InvalidInput(
-            "SEG Rows and Columns must be positive".into(),
-        ));
-    }
+    let FrameLayout {
+        columns,
+        rows,
+        frame_count,
+        ..
+    } = *layout;
     if let Some(frame_items) = object
         .get(tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE)
         .and_then(|element| element.items())

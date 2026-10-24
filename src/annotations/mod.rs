@@ -24,6 +24,7 @@ mod provenance_tests;
 pub use ann::AnnotationDocument;
 pub use context::DicomAnnotationContext;
 pub use derived_object::DerivedObjectProducer;
+pub use dicom_value::format_ds as format_dicom_decimal;
 pub use json::validate_unique_object_keys;
 pub use model::{
     polygon_boundaries_intersect, polygon_contains_point, polygon_self_intersects,
