@@ -320,6 +320,14 @@ pub(super) fn read_labelmap_frames(
     }
     let mut frames = Vec::new();
     let mut decoded_pixels = 0_usize;
+    let declared: BTreeSet<u16> = segments
+        .iter()
+        .filter_map(|segment| segment.source_segment_number)
+        .collect();
+    let background = object
+        .get(tags::PIXEL_PADDING_VALUE)
+        .map(|_| required_u16(object, tags::PIXEL_PADDING_VALUE))
+        .transpose()?;
     let decode = |sample: &[u8]| {
         if sample_bytes == 1 {
             u16::from(sample[0])
@@ -334,6 +342,11 @@ pub(super) fn read_labelmap_frames(
             .chunks_exact(sample_bytes)
             .map(decode)
             .collect::<BTreeSet<_>>();
+        if let Some(unknown) = present.difference(&declared).next() {
+            return Err(Error::InvalidInput(format!(
+                "label-map SEG Pixel Data uses undeclared Segment Number {unknown}"
+            )));
+        }
         for (segment_index, segment) in segments.iter().enumerate() {
             let segment_number =
                 segment
@@ -341,7 +354,7 @@ pub(super) fn read_labelmap_frames(
                     .unwrap_or(u16::try_from(segment_index + 1).map_err(|_| {
                         Error::InvalidInput("label-map SEG segment number exceeds US".into())
                     })?);
-            if segment_number == 0 || !present.contains(&segment_number) {
+            if Some(segment_number) == background || !present.contains(&segment_number) {
                 continue;
             }
             decoded_pixels = decoded_pixels

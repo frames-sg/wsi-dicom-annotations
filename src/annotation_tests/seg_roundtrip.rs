@@ -533,7 +533,7 @@ fn tiled_full_fractional_segmentation_derives_frame_positions() {
 }
 
 #[test]
-fn labelmap_background_segment_zero_is_inspectable_but_not_a_mask() {
+fn labelmap_preserves_background_and_rejects_undeclared_pixel_labels() {
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("source.dcm");
     let segmentation_path = directory.path().join("labelmap.dcm");
@@ -558,6 +558,11 @@ fn labelmap_background_segment_zero_is_inspectable_but_not_a_mask() {
         DataElement::new(tags::SEGMENTATION_TYPE, VR::CS, "LABELMAP"),
         DataElement::new(tags::DIMENSION_ORGANIZATION_TYPE, VR::CS, "TILED_FULL"),
         DataElement::new(
+            tags::PIXEL_PADDING_VALUE,
+            VR::US,
+            PrimitiveValue::from(0_u16),
+        ),
+        DataElement::new(
             tags::TOTAL_PIXEL_MATRIX_ROWS,
             VR::UL,
             PrimitiveValue::from(4_u32),
@@ -577,5 +582,45 @@ fn labelmap_background_segment_zero_is_inspectable_but_not_a_mask() {
 
     assert_eq!(imported.kind(), crate::SegmentationKind::LabelMap);
     assert_eq!(imported.segments()[0].source_segment_number(), Some(0));
+    assert!(imported.binary_runs().unwrap().is_empty());
+
+    object.take(tags::PIXEL_PADDING_VALUE).unwrap();
+    object.write_to_file(&segmentation_path).unwrap();
+    let imported = SegmentationDocument::read_seg(&segmentation_path, &context).unwrap();
+    let frames = imported.rasterized_frames().unwrap();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].segment_number(), 0);
+    assert_eq!(frames[0].mask(), &[true; 16]);
+
+    // Pixel values must refer to a Segment Sequence item. Dropping an
+    // undeclared foreground label would turn it into background on export.
+    object.put(DataElement::new(
+        tags::PIXEL_DATA,
+        VR::OB,
+        PrimitiveValue::from(vec![1_u8; 16]),
+    ));
+    object.write_to_file(&segmentation_path).unwrap();
+    let error = SegmentationDocument::read_seg(&segmentation_path, &context).unwrap_err();
+    assert!(
+        error.to_string().contains("undeclared Segment Number 1"),
+        "{error}"
+    );
+
+    let mut segments = object.take(tags::SEGMENT_SEQUENCE).unwrap();
+    segments.update_value(|value| {
+        value.items_mut().unwrap()[0].put(DataElement::new(
+            tags::SEGMENT_NUMBER,
+            VR::US,
+            PrimitiveValue::from(1_u16),
+        ));
+    });
+    object.put(segments);
+    object.put(DataElement::new(
+        tags::PIXEL_PADDING_VALUE,
+        VR::US,
+        PrimitiveValue::from(1_u16),
+    ));
+    object.write_to_file(&segmentation_path).unwrap();
+    let imported = SegmentationDocument::read_seg(&segmentation_path, &context).unwrap();
     assert!(imported.binary_runs().unwrap().is_empty());
 }

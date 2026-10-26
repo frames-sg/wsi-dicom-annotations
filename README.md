@@ -5,10 +5,14 @@
 [DICOM whole-slide workflow](https://frames-sg.com/dicom-whole-slide-conversion/) ·
 [API documentation](https://docs.rs/wsi-dicom-annotations)
 
-This checkout is version 0.2.1, including the shared metadata reader and headless
+This checkout is version 0.2.2, including the shared metadata reader and headless
 CLI. The [published 0.1.4 library](https://crates.io/crates/wsi-dicom-annotations/0.1.4)
 remains available under its original MIT/Apache-2.0 licenses; see [License](#license)
 for the new release's licensing.
+
+Version 0.2.2 fixes LABELMAP segmentation import: every used pixel label must
+have a Segment Sequence entry, and Pixel Padding Value designates background.
+Without Pixel Padding Value, segment zero is preserved as foreground.
 
 `wsi-dicom-annotations` provides UI-independent Rust models, readers, writers,
 and conversion boundaries for DICOM Whole Slide Microscopy derived objects:
@@ -44,7 +48,7 @@ cargo test -p wsi-annotation-probe --locked
 
 `target/debug/annotation_probe` supports `inspect`, `roundtrip`, `convert-geojson`,
 and `convert-raster`. It preserves the versioned JSON stdout reports and exit codes
-used by `wsi-annotation-interop`; diagnostics go to stderr. Newly converted objects
+used by `wsi-annotation-tests`; diagnostics go to stderr. Newly converted objects
 identify the producer as Frames / Annotation Probe and use the CLI package version.
 Existing DICOM identities are retained by the inspection and roundtrip paths.
 
@@ -133,7 +137,7 @@ not contain a viewer, renderer, editing history, workspace persistence, PACS or
 DICOMweb transport, clinical workflow claims, or collaborative review state.
 
 Applications consume this library for import and export. The separate
-`wsi-annotation-interop` project remains an independent file-level conformance
+`wsi-annotation-tests` project remains an independent file-level conformance
 harness and does not share the production implementation.
 
 ## Dependency security note
@@ -155,5 +159,5 @@ commercial license when its terms are followed.
 
 Published releases through 0.1.4 retain their original MIT/Apache-2.0 licenses.
 Existing permissive grants and separately licensed material are preserved; see
-[LICENSE](https://github.com/frames-sg/wsi-dicom-annotations/blob/main/LICENSE). The separate `wsi-annotation-interop` test harness retains
+[LICENSE](https://github.com/frames-sg/wsi-dicom-annotations/blob/main/LICENSE). The separate `wsi-annotation-tests` test harness retains
 its existing permissive licensing.
