@@ -187,16 +187,16 @@ pub(super) struct PlanIdentifiers {
 }
 
 impl PlanIdentifiers {
-    pub(super) fn new() -> Self {
-        let (content_date, content_time) = dicom_now();
-        Self {
+    pub(super) fn new() -> crate::Result<Self> {
+        let (content_date, content_time) = dicom_now()?;
+        Ok(Self {
             series_instance_uid: new_dicom_uid(),
             dimension_organization_uid: new_dicom_uid(),
             concatenation_uid: new_dicom_uid(),
             concatenation_source_sop_instance_uid: new_dicom_uid(),
             content_date,
             content_time,
-        }
+        })
     }
 
     pub(super) fn instance_spec<'a>(

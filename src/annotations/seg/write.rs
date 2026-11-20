@@ -24,7 +24,7 @@ pub(super) fn add_segmentation_attributes(
     let source_metadata = source.source_metadata()?;
     let (matrix_width, matrix_height) = source.total_pixel_matrix_dimensions();
     let (tile_width, tile_height) = source.tile_dimensions();
-    let (date, time) = dicom_now();
+    let (date, time) = dicom_now()?;
     put_text(object, tags::IMAGE_TYPE, VR::CS, "DERIVED\\PRIMARY");
     put_text(object, tags::CONTENT_DATE, VR::DA, &date);
     put_text(object, tags::CONTENT_TIME, VR::TM, &time);

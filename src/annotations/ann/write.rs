@@ -42,8 +42,8 @@ pub(super) fn write_ann(
         &document.series_instance_uid,
         "ANN",
         &document.producer,
-    );
-    let (date, time) = dicom_now();
+    )?;
+    let (date, time) = dicom_now()?;
     put_text(&mut object, tags::CONTENT_DATE, VR::DA, &date);
     put_text(&mut object, tags::CONTENT_TIME, VR::TM, &time);
     put_text(

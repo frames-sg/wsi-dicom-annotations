@@ -1,5 +1,4 @@
-use chrono::{Datelike, Local, Timelike};
-use dicom_core::value::{DataSetSequence, PrimitiveValue, Value};
+use dicom_core::value::{DataSetSequence, DicomDateTime, PrimitiveValue, Value};
 use dicom_core::{DataElement, Length, Tag, VR};
 use dicom_dictionary_std::tags;
 use dicom_object::InMemDicomObject;
@@ -62,18 +61,14 @@ pub(crate) fn new_dicom_uid() -> String {
     format!("2.25.{}", uuid::Uuid::new_v4().as_u128())
 }
 
-pub(crate) fn dicom_now() -> (String, String) {
-    let now = Local::now();
-    (
-        format!("{:04}{:02}{:02}", now.year(), now.month(), now.day()),
-        format!(
-            "{:02}{:02}{:02}.{:06}",
-            now.hour(),
-            now.minute(),
-            now.second(),
-            now.nanosecond() / 1_000
-        ),
-    )
+pub(crate) fn dicom_now() -> Result<(String, String)> {
+    let now = DicomDateTime::now_local().map_err(|error| {
+        Error::InvalidInput(format!("cannot encode local DICOM timestamp: {error}"))
+    })?;
+    let time = now
+        .time()
+        .ok_or_else(|| Error::InvalidInput("local DICOM timestamp has no time".into()))?;
+    Ok((now.date().to_encoded(), time.to_encoded()))
 }
 
 pub(crate) fn sequence_items(object: &InMemDicomObject, tag: Tag) -> Result<&[InMemDicomObject]> {
