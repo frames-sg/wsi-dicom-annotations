@@ -59,16 +59,23 @@ impl RasterGeometry {
                     .z
                     .ok_or_else(|| Error::InvalidInput("slide-mm grid origin requires z".into()))?;
                 let origin = [profile.grid_origin.x, profile.grid_origin.y, z];
-                validate_slide_grid(source, origin, orientation, profile, descriptor)?;
                 (origin, [profile.sample_spacing.y, profile.sample_spacing.x])
             }
         };
-        Ok(Self {
+        let geometry = Self {
             origin,
             orientation,
             pixel_spacing,
             slice_thickness,
-        })
+        };
+        if profile.coordinate_space == RasterCoordinateSpace::SlideMm {
+            for (column, row) in [(0, 0), (descriptor.width - 1, descriptor.height - 1)] {
+                let [x, y, z] = geometry.position_at(f64::from(column), f64::from(row));
+                let pixel = source.slide_coordinate_to_pixel3(x, y, z)?;
+                validate_sample(source, pixel.x, pixel.y)?;
+            }
+        }
+        Ok(geometry)
     }
 
     pub(super) fn frame_position(self, column_position: u32, row_position: u32) -> [f64; 3] {
@@ -99,24 +106,20 @@ fn validate_last_pixel_sample(
 ) -> Result<()> {
     let x = profile.grid_origin.x + f64::from(descriptor.width - 1) * profile.sample_spacing.x;
     let y = profile.grid_origin.y + f64::from(descriptor.height - 1) * profile.sample_spacing.y;
-    base.pixel_to_slide_coordinate(x, y).map(|_| ())
+    validate_sample(base, x, y)
 }
 
-fn validate_slide_grid(
-    source: &DicomAnnotationContext,
-    origin: [f64; 3],
-    orientation: [f64; 6],
-    profile: &RasterProfile,
-    descriptor: RasterDescriptor,
-) -> Result<()> {
-    let column_distance = f64::from(descriptor.width - 1) * profile.sample_spacing.x;
-    let row_distance = f64::from(descriptor.height - 1) * profile.sample_spacing.y;
-    for (column, row) in [(0.0, 0.0), (column_distance, row_distance)] {
-        source.slide_coordinate_to_pixel3(
-            origin[0] + column * orientation[0] + row * orientation[3],
-            origin[1] + column * orientation[1] + row * orientation[4],
-            origin[2] + column * orientation[2] + row * orientation[5],
-        )?;
+fn validate_sample(source: &DicomAnnotationContext, x: f64, y: f64) -> Result<()> {
+    let (width, height) = source.total_pixel_matrix_dimensions();
+    // The source and raster origins are pixel centers. Allow roundoff when
+    // projecting millimeters back onto the source grid.
+    const TOLERANCE_PX: f64 = 1e-6;
+    if !(-TOLERANCE_PX..=f64::from(width - 1) + TOLERANCE_PX).contains(&x)
+        || !(-TOLERANCE_PX..=f64::from(height - 1) + TOLERANCE_PX).contains(&y)
+    {
+        return Err(Error::InvalidInput(format!(
+            "raster sample ({x}, {y}) is outside the {width} × {height} source pixel grid"
+        )));
     }
     Ok(())
 }
