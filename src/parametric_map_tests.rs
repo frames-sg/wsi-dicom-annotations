@@ -32,6 +32,48 @@ fn raster_profile_requires_explicit_axes_channels_and_integer_scaling() {
 }
 
 #[test]
+fn raster_grid_samples_must_fit_the_source_matrix() {
+    let directory = tempfile::tempdir().unwrap();
+    let source_path = directory.path().join("source.dcm");
+    let input_path = directory.path().join("probability.npy");
+    write_source_wsi(&source_path, 4, 3, 2, 2);
+    write_npy_f32(&input_path, &[1, 2], &[0.5, 0.5], false);
+    let source = DicomAnnotationContext::from_source(&source_path).unwrap();
+    let mut profile: serde_json::Value =
+        serde_json::from_str(&single_channel_profile("float32")).unwrap();
+
+    for (space, spacing) in [
+        ("level0-pixels", 1.0),
+        ("source-pixels", 1.0),
+        ("slide-mm", 0.00025),
+    ] {
+        profile["coordinate_space"] = serde_json::json!(space);
+        profile["sample_spacing"] = serde_json::json!({"x": spacing, "y": spacing});
+        for (start, fits) in [(-1.0, false), (2.0, true), (3.0, false), (8.0, false)] {
+            profile["grid_origin"] = serde_json::json!({"x": start * spacing, "y": 0.0});
+            if space == "slide-mm" {
+                profile["grid_origin"]["z"] = serde_json::json!(0.0);
+            }
+            let result = ParametricMapDocument::open(
+                source.clone(),
+                source.clone(),
+                RasterProfile::from_json(&serde_json::to_vec(&profile).unwrap()).unwrap(),
+                &input_path,
+                RasterChannelSelection::Auto,
+            );
+            if fits {
+                result.unwrap();
+            } else {
+                assert!(
+                    matches!(result, Err(error) if error.to_string().contains("outside")),
+                    "{space} grid at {start} should extend outside the source"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn raster_profile_enforces_zarr_path_and_multichannel_selection() {
     let missing_path = PROFILE_F32.replace("\"npy\"", "\"zarr\"");
     let error = RasterProfile::from_json(missing_path.as_bytes()).unwrap_err();
