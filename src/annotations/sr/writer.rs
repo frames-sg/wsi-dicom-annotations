@@ -39,7 +39,7 @@ pub(super) fn write_sr(document: &StructuredReportDocument, path: &Path) -> Resu
     ] {
         object.remove_element(tag);
     }
-    let (date, time) = dicom_now();
+    let (date, time) = dicom_now()?;
     for (tag, vr, value) in [
         (tags::CONTENT_DATE, VR::DA, date.as_str()),
         (tags::CONTENT_TIME, VR::TM, time.as_str()),

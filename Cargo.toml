@@ -22,7 +22,6 @@ default = ["parametric-map"]
 parametric-map = ["dep:npyz", "dep:tiff", "dep:zarrs"]
 
 [dependencies]
-chrono = "0.4"
 dicom-core = "0.9"
 dicom-dictionary-std = "0.9"
 dicom-encoding = "0.9"
@@ -38,3 +37,7 @@ thiserror = "2"
 tiff = { version = "=0.11.3", optional = true, default-features = false, features = ["deflate", "lzw", "zstd"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 zarrs = { version = "=0.23.14", optional = true, default-features = false, features = ["blosc", "crc32c", "filesystem", "gzip", "sharding", "zstd"] }
+
+[patch.crates-io]
+# Frames 0.9.1 provides the DICOM calendar without Chrono.
+dicom-core = { git = "https://github.com/frames-sg/dicom-rs", rev = "6878be43351145908b77105460bbc4aeff038f3a" }

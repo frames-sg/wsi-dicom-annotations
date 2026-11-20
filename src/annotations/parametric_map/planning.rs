@@ -38,7 +38,7 @@ impl ParametricMapDocument {
                 "maximum PM instance size {maximum_instance_bytes} cannot contain one encoded frame"
             )));
         }
-        let identifiers = PlanIdentifiers::new();
+        let identifiers = PlanIdentifiers::new()?;
         let limits = InstanceLimits {
             maximum_bytes: maximum_instance_bytes,
             frame_bytes,

@@ -164,7 +164,7 @@ pub(crate) fn build_common_object(
     producer: &DerivedObjectProducer,
 ) -> Result<InMemDicomObject> {
     let source = context.source_metadata()?;
-    Ok(build_common_object_from_source(
+    build_common_object_from_source(
         &source,
         context,
         sop_class_uid,
@@ -172,7 +172,7 @@ pub(crate) fn build_common_object(
         series_instance_uid,
         modality,
         producer,
-    ))
+    )
 }
 
 pub(crate) fn build_common_object_from_source(
@@ -183,7 +183,7 @@ pub(crate) fn build_common_object_from_source(
     series_instance_uid: &str,
     modality: &str,
     producer: &DerivedObjectProducer,
-) -> InMemDicomObject {
+) -> Result<InMemDicomObject> {
     let mut object = InMemDicomObject::new_empty();
     copy_or_empty(source, &mut object, tags::PATIENT_NAME, VR::PN);
     copy_or_empty(source, &mut object, tags::PATIENT_ID, VR::LO);
@@ -227,7 +227,7 @@ pub(crate) fn build_common_object_from_source(
         series_instance_uid,
     );
     producer.write(&mut object);
-    let (date, time) = dicom_now();
+    let (date, time) = dicom_now()?;
     put_text(&mut object, tags::INSTANCE_CREATION_DATE, VR::DA, &date);
     put_text(&mut object, tags::INSTANCE_CREATION_TIME, VR::TM, &time);
     put_text(&mut object, tags::SOP_CLASS_UID, VR::UI, sop_class_uid);
@@ -244,7 +244,7 @@ pub(crate) fn build_common_object_from_source(
         VR::CS,
         "ISO_IR 192",
     );
-    object
+    Ok(object)
 }
 
 pub(crate) fn add_common_instance_reference(
